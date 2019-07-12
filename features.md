@@ -1,0 +1,117 @@
+# Feature Plan
+## Release v1.0
+- Account
+  - Change E-Mail
+  - Change Password
+  - Read-only list of sessions/devices
+  - Delete account
+- Contacts
+  - Account search
+    - Show public profile data
+  - Contact request
+  - Private data
+    - Local nickname
+    - Image shape
+  - Block and delete
+  - Verification
+    - QR code with temporal component
+    - Synchronize verified accounts 
+- Groups
+  - Admin system
+  - Block and delete
+  - Group image and description
+- Status (online, offline, typing...)
+- Personal message (called "Status")
+- Profile image
+- Daystream
+  - Users can upload images and videos along with messages
+  - Visible to all contacts
+  - Author should be able to see who viewed the Daystream
+    - Show amount of views in Daystream tab/main activity
+  - Author can delete entries
+  - Each entry is deleted automatically 24 hours after its creation
+- Messages
+  - Plain text
+  - Quote (All message types can contain a quote)
+  - State (dispatched, delivered, read)
+  - Attachment
+    - Images, videos, files, location, audio, another contact
+  - Voice messages
+    - Listen to voice messages using call speaker (mobile)
+  - Formatting
+    - Emojis
+    - Formatting codes (`*`, `_`, `~`,`` ` ``,` ``` `)
+    - Mentioning users with `@`
+  - Author can edit and delete messages
+- Color themes
+  - Templates
+  - Custom
+- Background images for chats
+  - Templates
+  - Custom
+- Miscellaneous
+  - Fast response in notification
+  - Optionally public profile data
+  - Configurable font within Skynet (not synchronized)
+- Server management (.NET WPF over VSL)
+  - List of connected clients
+  - Watch packets of specific clients
+  - Show plaintext packet contents
+- GDPR compliance
+  - Download all account related data from server (messages, files etc.)
+    - Select whether to include the encrypted message content blobs
+    - Select whether to download all files 
+  - Privacy policy on all related websites, and in application
+  - Confirmation mail to parents if user is under 16 years old
+  
+## Release v1.1+
+- Security
+  - Show a warning when a previously deleted account name is used again
+  - Hide e-mail address (e.g. for teachers)
+- Share currently used application
+- Permissions
+  - Select persons to share profile data with
+  - _See what you share_ principle: You can only see the status of a person if you share yours
+- Groups
+  - Allow new group members to resolve chat history
+  - Make it possible for admins to mute group members
+- Messages
+  - Source code syntax highlighting
+  - Link preview
+  - Change message view design between
+    - classic (like WhatsApp)
+    - left-aligned (like Wire) 
+- Live background with camera image (mobile)
+
+## Release v2.0+
+- Contact request
+  - Suggest accounts for contact request based on the users contacts
+  - Passive contact request via QR code
+  - Require verification key for sending contact request
+  - Automatic key exchange using pre-keys and manual accept for personal data
+- Messages
+  - Cross-Conversation-Quotes
+- Live streaming (like Instagram)
+- Threema Channel like public and private channels
+- Voice and video calls
+  - In groups and private chats
+  - Decline an incoming call on any device
+  - Switch your device in running call
+  - Show chat with ascending opacity from top down (mobile)
+  - Increase opacity of chat when mouse moves or hovers (desktop)
+- Conversations
+  - Organize conversations into folders
+  - Manage notifications per-conversation
+  - Dashboard with calendar etc.
+  - Join groups via invitation link
+  - Allow new members to get previous messages
+  - Form subgroups for special events or topics
+- VSL 2.0
+  - Perfect Forward Secrecy
+  - Session Restore
+- Account
+  - Two factor authentication
+  - Delete sessions in session/device list
+  - _Backup Account_: Specify an account of a friend to reset your Skynet password.
+  - Account management for usage in small organizations
+- Think about gestures like wipe to exit chat
