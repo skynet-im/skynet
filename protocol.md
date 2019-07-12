@@ -176,7 +176,7 @@ enum RestoreSessionError {
 }
 ```
 
-### **0x0A** CreateChannel ![networkDuplex] ![reviewPending] ###
+### **0x0A** CreateChannel ![networkDuplex] ###
 Sent by the server to a client to create a channel. If it is sent by the client with a random `ChannelId` the server assigns one in the _CreateChannelResponse_ packet.
 ```vpsl
 <Int64 ChannelId><ChannelType:Byte ChannelType><Int64 OwnerId>
@@ -377,7 +377,7 @@ This packet is sent over a direct channel from a group admin to all clients. Bec
 <Int64 ChannelId><Byte[] NewKey><Byte[] HistoryKey>
 ```
 
-### **0x1E** GroupChannelUpdate ![networkDuplex] ![reviewPending] ###
+### **0x1E** GroupChannelUpdate ![networkDuplex] ###
 To change the group channel key, the admin sends an update to each client in the group via direct channels. To do so, the client sends this packet with `MessageFlags.Unencrypted` and a dependency referencing all direct channel messages. The incremental `GroupRevision` counter is checked by the server and ensures that no concurrent changes are made. Following messages depend on this packet to specify the cryptographic key they use. When used to share profile data, all members should be invisible. The encrypted content uses the `HistoryKey` from the _GroupChannelKeyNotify_ packet if supplied to the matching client. With this key, the client can resolve all former channel and history keys.
 If the owner of the group channel deletes its account, the _OwnerId_ is set to `0`.
 ```vpsl
@@ -536,7 +536,6 @@ The server's response to `0x30 FileUpload`. This packet contains the file id the
 <Int64 FileId>
 ```
 
-[reviewPending]: https://fd.ru/images/icon/exclamation_mark.png "Review pending"
 [networkUp]: https://lerchen.net/skynet/static/network-up-36px.png "Only client to server"
 [networkDown]: https://lerchen.net/skynet/static/network-down-36px.png "Only server to client"
 [networkDuplex]: https://lerchen.net/skynet/static/network-duplex-36px.png "Both client to server and server to client"
