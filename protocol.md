@@ -507,8 +507,8 @@ enum OnlineState {
 }
 ```
 
-### **0x2C** DeviceListDetails ![networkUp] ###
-The device list details packet contributes real time data to the general DeviceList packet. It is sent by the server with `MessageFlags.Unencrypted`.
+### ~~**0x2C** DeviceListDetails~~ ![networkUp] ###
+~~The device list details packet contributes real time data to the general DeviceList packet. It is sent by the server with `MessageFlags.Unencrypted`.~~
 ```vpsl
 {UInt16 SessionDetails <Int64 SessionId><DateTime LastConnected><Int32 LastVersionCode>}
 ```
@@ -538,6 +538,19 @@ The server's response to `0x30 FileUpload`. This packet contains the file id the
 ```vpsl
 <Int64 FileId>
 ```
+
+### **0x32** DeviceListRequest ![networkUp] ###
+Sent by the client to request device list details.
+```vpsl
+// No additional content
+```
+
+### **0x33** DeviceListResponse ![networkDown] ###
+This packet contributes real time data to the general DeviceList packet.
+```vpsl
+{UInt16 SessionDetails <Int64 SessionId><DateTime LastConnected><Int32 LastVersionCode>}
+```
+
 
 [networkUp]: https://lerchen.net/skynet/static/network-up-36px.png "Only client to server"
 [networkDown]: https://lerchen.net/skynet/static/network-down-36px.png "Only server to client"
