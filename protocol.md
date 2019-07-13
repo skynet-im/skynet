@@ -47,6 +47,9 @@ Using a loopback flag solves many problems but makes the classical revision syst
 ##### Loopback Channel #####
 This is a special channel whose only member is the creating user. It acts as kind of a clipboard which is sued to synchronize data across devices. Its key is directly derived from the user's password.
 
+##### Account Data Channel #####
+This channel contains all public account information like the public keys to avoid individual forwarding to direct channels. All messages have to be sent with `MessageFlags.Unencrypted`. The server automatically adds all contacts to the user's account data channel.
+
 ##### Direct Channel #####
 The direct channel is used for direct chat between two accounts. There is no longer a _contact request_. If Alice knows the `AccountId` of Bob's account, which she can look up using the search packets, she can simply create a direct channel. The server will automatically inject the public keys for both sides. Once Alice has received Bob's public key, she can derive and cache the channel key. When the server has sent a _DirectChannelUpdate_ packet, Alice can start sending chat messages to Bob.
 
@@ -424,7 +427,7 @@ enum MessageType {
 To edit or delete a message or a daystream entry, the client sends a MessageOverride packet to the respective conversation channel with a dependency to the respective _ChatMessage_ or _DaystreamMessage_.
 ```vpsl
 @dependency ChatMessage | DaystreamMessage
-<Int64 MessageId><OverrideAction:Byte Action>((OverrideAction == Edit)<String NewText>)
+<OverrideAction:Byte Action>((OverrideAction == Edit)<String NewText>)
 ```
 ```csharp
 enum OverrideAction {
