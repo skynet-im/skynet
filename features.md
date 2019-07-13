@@ -53,10 +53,6 @@
   - Fast response in notification
   - Optionally public profile data
   - Configurable font within Skynet (not synchronized)
-- Server management (.NET WPF over VSL)
-  - List of connected clients
-  - Watch packets of specific clients
-  - Show plaintext packet contents
 - GDPR compliance
   - Download all account related data from server (messages, files etc.)
     - Select whether to include the encrypted message content blobs
@@ -70,8 +66,8 @@
   - Hide e-mail address (e.g. for teachers)
 - Share currently used application
 - Permissions
-  - Select persons to share profile data with
-  - _See what you share_ principle: You can only see the status of a person if you share yours
+  - Select whom to share profile data with
+  - _See what you share_ principle: You can see the status of a person only if you share yours
 - Groups
   - Allow new group members to resolve chat history
   - Make it possible for admins to mute group members
