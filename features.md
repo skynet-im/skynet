@@ -42,7 +42,7 @@
     - Emojis
     - Formatting codes (`*`, `_`, `~`,`` ` ``,` ``` `)
     - Mentioning users with `@`
-  - Author can edit and delete messages
+  - Author can edit and delete messages for 10 minutes after they are sent.
 - Color themes
   - Templates
   - Custom
