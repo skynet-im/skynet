@@ -492,25 +492,31 @@ This packet is used to change the private background image in a specific convers
 ```vpsl
 // No additional content
 ```
----
-### Real time messages ###
-### **0x2B** OnlineState ![networkDuplex] ###
-The online state packet is sent via the user's broadcast channel to all contacts. Later versions will have different channels to handle permissions. When the client is active, `LastActive` specifies the time the client became active.
+
+### **0x2B** OnlineState ![networkDown] ###
+This packet is injected by the server with `MessageFlags.Unencrypted` and `MessageFlags.NoSenderSync` in the user's account data channel. Later versions will have different channels to handle permissions.
 ```vpsl
-<OnlineState:Byte OnlineState><DateTime LastActive><Int64 WritingToChannelId>
+<OnlineState:Byte OnlineState>((OnlineState.Inactive)<DateTime LastActive>)
 ```
 ```csharp
+// Might be extended to a bitmask later
 enum OnlineState {
-    Active,
-    Connected,
-    Offline
+    Inactive,
+    Active
 }
 ```
-
-### ~~**0x2C** DeviceListDetails~~ ![networkUp] ###
-~~The device list details packet contributes real time data to the general DeviceList packet. It is sent by the server with `MessageFlags.Unencrypted`.~~
+---
+### Online state ###
+### **0x2C** WritingState ![networkDown] ###
+The server sends this packet to all channel members where a client starts or stops writing.
 ```vpsl
-{UInt16 SessionDetails <Int64 SessionId><DateTime LastConnected><Int32 LastVersionCode>}
+<Int64 ChannelId><Int64 AccountId><Bool Writing>
+```
+
+### **0x34** SetClientState ![networkUp] ###
+This packet informs the server about the current client state.
+```vpsl
+<OnlineState:Byte OnlineState><Int64 WritingToChannelId>
 ```
 ---
 ### On demand packets ###
