@@ -507,8 +507,8 @@ enum OnlineState {
 ```
 ---
 ### Online state ###
-### **0x2C** WritingState ![networkDown] ###
-The server sends this packet to all channel members where a client starts or stops writing.
+### **0x2C** ChannelAction ![networkDown] ###
+The server sends this packet to all channel members where a client starts or stops typing, audio recording, etc.
 ```vpsl
 <Int64 ChannelId><Int64 AccountId><ChannelAction:Byte Action>
 ```
