@@ -510,13 +510,20 @@ enum OnlineState {
 ### **0x2C** WritingState ![networkDown] ###
 The server sends this packet to all channel members where a client starts or stops writing.
 ```vpsl
-<Int64 ChannelId><Int64 AccountId><Bool Writing>
+<Int64 ChannelId><Int64 AccountId><ChannelAction:Byte Action>
+```
+```csharp
+enum ChannelAction {
+    None,
+    Typing,
+    RecordingAudio
+}
 ```
 
 ### **0x34** SetClientState ![networkUp] ###
 This packet informs the server about the current client state.
 ```vpsl
-<OnlineState:Byte OnlineState><Int64 WritingToChannelId>
+<OnlineState:Byte OnlineState><ChannelAction:Byte Action>((!ChannelAction.None)<Int64 ChannelId>)
 ```
 ---
 ### On demand packets ###
@@ -524,6 +531,7 @@ This packet informs the server about the current client state.
 ```vpsl
 <String Query>
 ```
+
 ### **0x2E** SearchAccountResponse ![networkDown] ###
 This packet contains all results of a _SearchAccount_ query and forwards public profile data.
 ```vpsl
