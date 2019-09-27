@@ -272,7 +272,7 @@ When a client receives this packet it should ensure that the following tasks hav
 1. PrivateKeys
 2. PublicKeys
 3. Nickname
-4. PersonalMessage
+4. Bio
 
 ### **0x10** RealTimeMessage ![networkDuplex] ###
 The real time message is a volatile and lightweight version of the `ChannelMessage`. It has no dependencies, and as files are handled with depencies in Skynet, a real time message cannot reference a file which makes `MessageFlags.FileAttached` invalid.
@@ -463,14 +463,14 @@ The Nickname packet is sent by a client to any profile data channel. If sent wit
 <String Nickname>
 ```
 
-### **0x26** PersonalMessage ![networkDuplex] ###
-The PersonalMessage packet is sent by a client to any profile data channel. If it is sent with `MessageFlags.Unencrypted`, the profile image is publicly visible. PersonalMessage packets always use `PersistenceMode.KeepLast`. 
+### **0x26** Bio ![networkDuplex] ###
+The Bio packet is sent by a client to any profile data channel. If it is sent with `MessageFlags.Unencrypted`, the profile image is publicly visible. Bio packets always use `PersistenceMode.KeepLast`. 
 ```vpsl
-<String PersonalMessage>
+<String Bio>
 ```
 
 ### **0x27** ProfileImage ![networkDuplex] ###
-Similar to PersonalMessage packet. This packet uses the `FileId` of its container.
+Similar to Bio packet. This packet uses the `FileId` of its container.
 ```vpsl
 <String Caption>
 ```
