@@ -35,12 +35,12 @@ Using Firebase Cloud Messaging (FCM) requires the server to keep track of the re
 ### Channels ###
 With the Skynet protocol v4 we had different implementations for many types of communication channels. This concept made abstraction almost impossible and increased the complexity, especially on the server side.
 
-To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with a channel-unique, incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.
+To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with an incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.
 In order to move away from the old `UserData` packet, which was prone to concurrency and timing errors, we introduce an additional channel and two more types of messages.
 
 ##### MessageFlags #####
 `MessageFlags.Loopback` indicates that a message is to be delivered only to the other devices of the sender of this message. Messages with the loopback flag are encrypted using the key of the users _loopback channel_.  
-Using a loopback flag solves many problems but makes the classical revision system of all clients having the same data impossible. Therefore, the server has to inform the client when message IDs are skipped. With this information, the client can make sure no messages are missing.
+Using a loopback flag solves many problems but makes the classical revision system of all clients having the same data impossible. Therefore, a client which decides, not to sychronize all messages, has to request them later from the server which may lead to duplicate messages that have to be ignored.
 
 `MessageFlags.Unencrypted` marks a message that is not encrypted and should be processed by the server. Data such as blocked contacts and conversations is managed using the loopback channel with this flag.  
 
@@ -215,7 +215,7 @@ The ChannelMessage is the most important packet of the new channel-based protoco
 ```vpsl
 <Byte PacketVersion><Int64 ChannelId>
 ((ToClient)<Int64 SenderId>)<Int64 MessageId>
-((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
+((ToClient)<DateTime DispatchTime>)
 <MessageFlags:Byte MessageFlags>
 ((MessageFlags.FileAttached)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
@@ -239,8 +239,7 @@ If the client wants to send a new message, it chooses a random negative `Message
 ```vpsl
 <Int64 ChannelId><Int64 TempMessageId>
 <MessageSendError:Byte ErrorCode>
-<Int64 MessageId><Int64 SkipCount>
-<DateTime DispatchTime>
+<Int64 MessageId><DateTime DispatchTime>
 ```
 ```csharp
 enum MessageSendError {
@@ -252,7 +251,7 @@ enum MessageSendError {
 ```
 
 ### **0x0E** RequestMessages ![networkUp] ###
-This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet.
+This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
 ```vpsl
 <Int64 ChannelId><Int64 FirstKnownMessageId><Int64 RequestCount>
 ```
