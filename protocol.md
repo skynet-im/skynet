@@ -251,12 +251,6 @@ enum MessageSendError {
 }
 ```
 
-### **0x0D** MessageBlock ![networkUp] ###
-The message block defines a set of messages as a transaction. This is necessary in some cases, where multiple messages are required for one operation and connection interrupts cannot be handled.
-```vpsl
-{UInt16 Messages <Byte[] Message>}
-```
-
 ### **0x0E** RequestMessages ![networkUp] ###
 This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet.
 ```vpsl
@@ -275,25 +269,6 @@ When a client receives this packet it should ensure that the following tasks hav
 3. Nickname
 4. Bio
 
-### **0x10** RealTimeMessage ![networkDuplex] ###
-The real time message is a volatile and lightweight version of the `ChannelMessage`. It has no dependencies, and as files are handled with depencies in Skynet, a real time message cannot reference a file which makes `MessageFlags.FileAttached` invalid.
-```vpsl
-<Int64 ChannelId>((ToClient)<Int64 SenderId>)
-<MessageFlags:Byte MessageFlags>
-<Byte ContentPacketId><Byte[] ContentPacket>
-```
-
-### **0x11** SubscribeChannel ![networkUp] ###
-The client has to subscribe channels to receive real time messages. Use `ChannelId=0` to subscribe all available channels and `PacketId=0` to subscribe all packets.
-```vpsl
-<Int64 ChannelId><Byte PacketId>
-```
-
-### **0x12** UnsubscribeChannel ![networkUp] ###
-The server ends channel subscriptions automatically when the client disconnects, but if the client is running in the background it might also want to end subscriptions.
-```vpsl
-<Int64 ChannelId><Byte PacketId>
-```
 ---
 ### Channel messages ###
 ### **0x13** QueueMailAddressChange ![networkDuplex] ###
@@ -339,12 +314,6 @@ This packet is sent by the client to its loopback channel using `MessageFlags.Un
 @dependency PrivateKeys // only to server
 <KeyFormat:Byte SignatureKeyFormat><Byte[] SignatureKey>
 <KeyFormat:Byte DerivationKeyFormat><Byte[] DerivationKey>
-```
-
-### ~~**0x19** KeypairReference~~ ![networkDown] ###
-~~This packet is sent by the server to each client with `MessageFlags.Unencrypted`. It holds dependencies to the users keypair and the counterpart's public key which was injected by the server.~~
-```vpsl
-// No additional content
 ```
 
 ### **0x1A** VerifiedKeys ![networkDuplex] ###
@@ -566,6 +535,14 @@ This packet contributes real time data to the general DeviceList packet.
 ```vpsl
 {UInt16 SessionDetails <Int64 SessionId><DateTime LastConnected><Int32 LastVersionCode>}
 ```
+
+---
+### Unassigned Packet IDs
+- **0x0D** MessageBlock
+- **0x10** RealTimeMessage
+- **0x11** SubscribeChannel
+- **0x12** UnsubscribeChannel
+- **0x19** KeypairReference
 
 
 [networkUp]: https://lerchen.net/skynet/static/network-up-36px.png "Only client to server"
