@@ -106,7 +106,7 @@ enum ConnectionState {
 ```
 
 ### **0x02** CreateAccount ![networkUp] ###
-This packet is sent when the user registers a new account. After e-mail address verification is completed, the server has to create the loopback channel and send a _PasswordUpdate_ packet as base revision. For further account initialization see _SyncFinished_.
+This packet is sent when the user registers a new account. After e-mail address verification is completed, the server has to create the loopback channel and send a _PasswordUpdate_ packet as base revision. For further account initialization see _SyncFinished_. If this packet is sent referencing an unconfirmed account with the correct password, the confirmation mail is sent again.
 ```vpsl
 <String AccountName><Byte[32] KeyHash>
 ```
@@ -118,6 +118,7 @@ This packet is sent when the user registers a new account. After e-mail address 
 ```csharp
 enum CreateAccountError {
     Success,
+    MailResent,
     AccountNameTaken,
     InvalidAccountName
 }
