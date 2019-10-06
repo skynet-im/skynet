@@ -65,7 +65,7 @@ Profile data can either be shared publicly via the account's account data channe
 ### User files ###
 The files attached to media messages are transferred using the VSL 1.2+ encrypted file transfer. Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel channel are allowed to reference it in other channels. This saves a lot of bandwidth when files are forwarded.  
 When a message is referenced for the first time in a channel and the sender is allowed to use it, this channel is granted permission to share it again. Files without any permissions are deleted by the garbage collector after a certain time. When a message is deleted in a channel that does not hold any other references to this file, the channel looses its permission. When the file has no more permissions, it's instantly deleted by the garbage collector.  
-If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the error code in the `ChannelMessageResponse` packet.
+If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the status code in the `ChannelMessageResponse` packet.
 
 ### Cryptography ###
 The security of Skynet is based on the user's password:
@@ -113,10 +113,10 @@ This packet is sent when the user registers a new account. After e-mail address 
 
 ### **0x03** CreateAccountResponse ![networkDown] ###
 ```vpsl
-<CreateAccountError:Byte ErrorCode>
+<CreateAccountStatus:Byte StatusCode>
 ```
 ```csharp
-enum CreateAccountError {
+enum CreateAccountStatus {
     Success,
     MailResent,
     AccountNameTaken,
@@ -144,12 +144,12 @@ All other messages are kept until they expire or a counterpart's account is dele
 ```
 
 ### **0x05** DeleteAccountResponse ![networkDown] ###
-After receiving this packet with `DeleteAccountError.Success`, the server closes the connection.
+After receiving this packet with `DeleteAccountStatus.Success`, the server closes the connection.
 ```vpsl
-<DeleteAccountError:Byte ErrorCode>
+<DeleteAccountStatus:Byte StatusCode>
 ```
 ```csharp
-enum DeleteAccountError {
+enum DeleteAccountStatus {
     Success,
     InvalidCredentials
 }
@@ -163,10 +163,10 @@ This packet is sent by the client after opening a connection. The `FcmRegistrati
 
 ### **0x07** CreateSessionResponse ![networkDown] ###
 ```vpsl
-<Int64 AccountId><Int64 SessionId><CreateSessionError:Byte ErrorCode>
+<Int64 AccountId><Int64 SessionId><CreateSessionStatus:Byte StatusCode>
 ```
 ```csharp
-enum CreateSessionError {
+enum CreateSessionStatus {
     Success,
     InvalidCredentials,
     InvalidFcmRegistrationToken,
@@ -183,10 +183,10 @@ After initializing a connection, the client can restore a session with this pack
 
 ### **0x09** RestoreSessionResponse ![networkDown] ###
 ```vpsl
-<RestoreSessionError:Byte ErrorCode>
+<RestoreSessionStatus:Byte StatusCode>
 ```
 ```csharp
-enum RestoreSessionError {
+enum RestoreSessionStatus {
     Success,
     InvalidCredentials,
     InvalidSession
@@ -212,10 +212,10 @@ enum ChannelType {
 ### **0x2F** CreateChannelResponse ![networkDown] ###
 The server responds to a _CreateChannel_ packet with this packet. It tells the client about the status and the `ChannelId`.
 ```vpsl
-<Int64 TempChannelId><ChannelCreateError:Byte ErrorCode><Int64 ChannelId>
+<Int64 TempChannelId><ChannelCreateStatus:Byte StatusCode><Int64 ChannelId>
 ```
 ```csharp
-enum ChannelCreateError {
+enum ChannelCreateStatus {
     Success,
     AlreadyExists,
     InvalidCounterpart,
@@ -257,11 +257,11 @@ enum MessageFlags {
 If the client wants to send a new message, it chooses a random negative `MessageId`. The server responds with this packet and assigns a new `MessageId`. The `DispatchTime` specifies when the server has processed this message.
 ```vpsl
 <Int64 ChannelId><Int64 TempMessageId>
-<MessageSendError:Byte ErrorCode>
+<MessageSendStatus:Byte StatusCode>
 <Int64 MessageId><DateTime DispatchTime>
 ```
 ```csharp
-enum MessageSendError {
+enum MessageSendStatus {
     Success,
     FileNotFound,
     AccessDenied,
