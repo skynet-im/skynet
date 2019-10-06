@@ -35,12 +35,12 @@ Using Firebase Cloud Messaging (FCM) requires the server to keep track of the re
 ### Channels ###
 With the Skynet protocol v4 we had different implementations for many types of communication channels. This concept made abstraction almost impossible and increased the complexity, especially on the server side.
 
-To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with a channel-unique, incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.
+To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with an incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.
 In order to move away from the old `UserData` packet, which was prone to concurrency and timing errors, we introduce an additional channel and two more types of messages.
 
 ##### MessageFlags #####
 `MessageFlags.Loopback` indicates that a message is to be delivered only to the other devices of the sender of this message. Messages with the loopback flag are encrypted using the key of the users _loopback channel_.  
-Using a loopback flag solves many problems but makes the classical revision system of all clients having the same data impossible. Therefore, the server has to inform the client when message IDs are skipped. With this information, the client can make sure no messages are missing.
+Using a loopback flag solves many problems but makes the classical revision system of all clients having the same data impossible. Therefore, a client which decides, not to sychronize all messages, has to request them later from the server which may lead to duplicate messages that have to be ignored.
 
 `MessageFlags.Unencrypted` marks a message that is not encrypted and should be processed by the server. Data such as blocked contacts and conversations is managed using the loopback channel with this flag.  
 
@@ -65,7 +65,7 @@ Profile data can either be shared publicly via the account's account data channe
 ### User files ###
 The files attached to media messages are transferred using the VSL 1.2+ encrypted file transfer. Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel channel are allowed to reference it in other channels. This saves a lot of bandwidth when files are forwarded.  
 When a message is referenced for the first time in a channel and the sender is allowed to use it, this channel is granted permission to share it again. Files without any permissions are deleted by the garbage collector after a certain time. When a message is deleted in a channel that does not hold any other references to this file, the channel looses its permission. When the file has no more permissions, it's instantly deleted by the garbage collector.  
-If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the error code in the `ChannelMessageResponse` packet.
+If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the status code in the `ChannelMessageResponse` packet.
 
 ### Cryptography ###
 The security of Skynet is based on the user's password:
@@ -106,18 +106,19 @@ enum ConnectionState {
 ```
 
 ### **0x02** CreateAccount ![networkUp] ###
-This packet is sent when the user registers a new account. After e-mail address verification is completed, the server has to create the loopback channel and send a _PasswordUpdate_ packet as base revision. For further account initialization see _SyncFinished_.
+This packet is sent when the user registers a new account. After e-mail address verification is completed, the server has to create the loopback channel and send a _PasswordUpdate_ packet as base revision. For further account initialization see _SyncFinished_. If this packet is sent referencing an unconfirmed account with the correct password, the confirmation mail is sent again.
 ```vpsl
 <String AccountName><Byte[32] KeyHash>
 ```
 
 ### **0x03** CreateAccountResponse ![networkDown] ###
 ```vpsl
-<CreateAccountError:Byte ErrorCode>
+<CreateAccountStatus:Byte StatusCode>
 ```
 ```csharp
-enum CreateAccountError {
+enum CreateAccountStatus {
     Success,
+    MailResent,
     AccountNameTaken,
     InvalidAccountName
 }
@@ -125,17 +126,30 @@ enum CreateAccountError {
 
 ### **0x04** DeleteAccount ![networkUp] ###
 This packet is sent by a client to delete the user's account.
+The server will delete only delete personal data that has not been sent to other users. This includes:
+- Mail confirmations
+- Loopback channel
+- Loopback messages
+- Blocked accounts
+- Blocked conversations
+- Account data channel memberships
+- Group memberships
+- Profile data channel memberships
+
+Furthermore, all direct channels have to be archived and other accounts prevented from opening new channels.
+
+All other messages are kept until they expire or a counterpart's account is deleted, too.
 ```vpsl
 <Byte[32] KeyHash>
 ```
 
 ### **0x05** DeleteAccountResponse ![networkDown] ###
-After receiving this packet with `DeleteAccountError.Success`, the server closes the connection.
+After receiving this packet with `DeleteAccountStatus.Success`, the server closes the connection.
 ```vpsl
-<DeleteAccountError:Byte ErrorCode>
+<DeleteAccountStatus:Byte StatusCode>
 ```
 ```csharp
-enum DeleteAccountError {
+enum DeleteAccountStatus {
     Success,
     InvalidCredentials
 }
@@ -149,10 +163,10 @@ This packet is sent by the client after opening a connection. The `FcmRegistrati
 
 ### **0x07** CreateSessionResponse ![networkDown] ###
 ```vpsl
-<Int64 AccountId><Int64 SessionId><CreateSessionError:Byte ErrorCode>
+<Int64 AccountId><Int64 SessionId><CreateSessionStatus:Byte StatusCode>
 ```
 ```csharp
-enum CreateSessionError {
+enum CreateSessionStatus {
     Success,
     InvalidCredentials,
     InvalidFcmRegistrationToken,
@@ -169,10 +183,10 @@ After initializing a connection, the client can restore a session with this pack
 
 ### **0x09** RestoreSessionResponse ![networkDown] ###
 ```vpsl
-<RestoreSessionError:Byte ErrorCode>
+<RestoreSessionStatus:Byte StatusCode>
 ```
 ```csharp
-enum RestoreSessionError {
+enum RestoreSessionStatus {
     Success,
     InvalidCredentials,
     InvalidSession
@@ -198,10 +212,10 @@ enum ChannelType {
 ### **0x2F** CreateChannelResponse ![networkDown] ###
 The server responds to a _CreateChannel_ packet with this packet. It tells the client about the status and the `ChannelId`.
 ```vpsl
-<Int64 TempChannelId><ChannelCreateError:Byte ErrorCode><Int64 ChannelId>
+<Int64 TempChannelId><ChannelCreateStatus:Byte StatusCode><Int64 ChannelId>
 ```
 ```csharp
-enum ChannelCreateError {
+enum ChannelCreateStatus {
     Success,
     AlreadyExists,
     InvalidCounterpart,
@@ -209,12 +223,18 @@ enum ChannelCreateError {
 }
 ```
 
+### **0x0D** DeleteChannel ![networkDown] ###
+Sent by the server to notify a client that a channel has been deleted permanently from the server. The client should not include the state of this channel in _RestoreSession_ packets anymore, but can keep the data locally.
+```vpsl
+<Int64 ChannelId>
+```
+
 ### **0x0B** ChannelMessage ![networkDuplex] ###
 The ChannelMessage is the most important packet of the new channel-based protocol. It acts as a box for many types of packets that can be sent to a channel. Use `AccountId=0` to indicate a global dependency. The initial value for the version numbers is `1`.
 ```vpsl
 <Byte PacketVersion><Int64 ChannelId>
 ((ToClient)<Int64 SenderId>)<Int64 MessageId>
-((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
+((ToClient)<DateTime DispatchTime>)
 <MessageFlags:Byte MessageFlags>
 ((MessageFlags.FileAttached)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
@@ -237,12 +257,11 @@ enum MessageFlags {
 If the client wants to send a new message, it chooses a random negative `MessageId`. The server responds with this packet and assigns a new `MessageId`. The `DispatchTime` specifies when the server has processed this message.
 ```vpsl
 <Int64 ChannelId><Int64 TempMessageId>
-<MessageSendError:Byte ErrorCode>
-<Int64 MessageId><Int64 SkipCount>
-<DateTime DispatchTime>
+<MessageSendStatus:Byte StatusCode>
+<Int64 MessageId><DateTime DispatchTime>
 ```
 ```csharp
-enum MessageSendError {
+enum MessageSendStatus {
     Success,
     FileNotFound,
     AccessDenied,
@@ -250,14 +269,8 @@ enum MessageSendError {
 }
 ```
 
-### **0x0D** MessageBlock ![networkUp] ###
-The message block defines a set of messages as a transaction. This is necessary in some cases, where multiple messages are required for one operation and connection interrupts cannot be handled.
-```vpsl
-{UInt16 Messages <Byte[] Message>}
-```
-
 ### **0x0E** RequestMessages ![networkUp] ###
-This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet.
+This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
 ```vpsl
 <Int64 ChannelId><Int64 FirstKnownMessageId><Int64 RequestCount>
 ```
@@ -272,27 +285,8 @@ When a client receives this packet it should ensure that the following tasks hav
 1. PrivateKeys
 2. PublicKeys
 3. Nickname
-4. PersonalMessage
+4. Bio
 
-### **0x10** RealTimeMessage ![networkDuplex] ###
-The real time message is a volatile and lightweight version of the `ChannelMessage`. It has no dependencies, and as files are handled with depencies in Skynet, a real time message cannot reference a file which makes `MessageFlags.FileAttached` invalid.
-```vpsl
-<Int64 ChannelId>((ToClient)<Int64 SenderId>)
-<MessageFlags:Byte MessageFlags>
-<Byte ContentPacketId><Byte[] ContentPacket>
-```
-
-### **0x11** SubscribeChannel ![networkUp] ###
-The client has to subscribe channels to receive real time messages. Use `ChannelId=0` to subscribe all available channels and `PacketId=0` to subscribe all packets.
-```vpsl
-<Int64 ChannelId><Byte PacketId>
-```
-
-### **0x12** UnsubscribeChannel ![networkUp] ###
-The server ends channel subscriptions automatically when the client disconnects, but if the client is running in the background it might also want to end subscriptions.
-```vpsl
-<Int64 ChannelId><Byte PacketId>
-```
 ---
 ### Channel messages ###
 ### **0x13** QueueMailAddressChange ![networkDuplex] ###
@@ -340,12 +334,6 @@ This packet is sent by the client to its loopback channel using `MessageFlags.Un
 <KeyFormat:Byte DerivationKeyFormat><Byte[] DerivationKey>
 ```
 
-### ~~**0x19** KeypairReference~~ ![networkDown] ###
-~~This packet is sent by the server to each client with `MessageFlags.Unencrypted`. It holds dependencies to the users keypair and the counterpart's public key which was injected by the server.~~
-```vpsl
-// No additional content
-```
-
 ### **0x1A** VerifiedKeys ![networkDuplex] ###
 This packet is optional and can be used for a QR-code based verification. It saves the SHA-256 over the counterpart's entire _PublicKeys_ packet and is sent by the client to the associated direct channel with `MessageFlags.Loopback`.
 ```vpsl
@@ -383,7 +371,6 @@ This packet is sent over a direct channel from a group admin to all clients. Bec
 
 ### **0x1E** GroupChannelUpdate ![networkDuplex] ###
 To change the group channel key, the admin sends an update to each client in the group via direct channels. To do so, the client sends this packet with `MessageFlags.Unencrypted` and a dependency referencing all direct channel messages. The incremental `GroupRevision` counter is checked by the server and ensures that no concurrent changes are made. Following messages depend on this packet to specify the cryptographic key they use. When used to share profile data, all members should be invisible. The encrypted content uses the `HistoryKey` from the _GroupChannelKeyNotify_ packet if supplied to the matching client. With this key, the client can resolve all former channel and history keys.
-If the owner of the group channel deletes its account, the _OwnerId_ is set to `0`.
 ```vpsl
 @dependency GroupChannelKeyNotify // per account
 <Int64 GroupRevision>{UInt16 Members
@@ -405,6 +392,20 @@ enum GroupMemberFlags {
 This packet is sent by a client to one of its profile data channels. It specifies which data is shared over this channel.
 ```vpsl
 // Reserved for permission system in release v1.1+
+```
+
+### **0x19** ArchiveChannel ![networkDuplex] ###
+This changes a channel's archive mode which is necessary to avoid sending messages to a deleted or blocked channel.
+In contrast to deleted channels, clients can still send packets like `GroupChannelKeyNotify` over blocked channels.
+```vpsl
+<ArchiveMode:Byte ArchiveMode>
+```
+```csharp
+enum ArchiveMode {
+    None,
+    Blocked,
+    Deleted
+}
 ```
 
 ### **0x20** ChatMessage ![networkDuplex] ### 
@@ -463,14 +464,14 @@ The Nickname packet is sent by a client to any profile data channel. If sent wit
 <String Nickname>
 ```
 
-### **0x26** PersonalMessage ![networkDuplex] ###
-The PersonalMessage packet is sent by a client to any profile data channel. If it is sent with `MessageFlags.Unencrypted`, the profile image is publicly visible. PersonalMessage packets always use `PersistenceMode.KeepLast`. 
+### **0x26** Bio ![networkDuplex] ###
+The Bio packet is sent by a client to any profile data channel. If it is sent with `MessageFlags.Unencrypted`, the profile image is publicly visible. Bio packets always use `PersistenceMode.KeepLast`. 
 ```vpsl
-<String PersonalMessage>
+<String Bio>
 ```
 
 ### **0x27** ProfileImage ![networkDuplex] ###
-Similar to PersonalMessage packet. This packet uses the `FileId` of its container.
+Similar to Bio packet. This packet uses the `FileId` of its container.
 ```vpsl
 <String Caption>
 ```
@@ -565,6 +566,12 @@ This packet contributes real time data to the general DeviceList packet.
 ```vpsl
 {UInt16 SessionDetails <Int64 SessionId><DateTime LastConnected><Int32 LastVersionCode>}
 ```
+
+---
+### Unassigned Packet IDs
+- **0x10** RealTimeMessage
+- **0x11** SubscribeChannel
+- **0x12** UnsubscribeChannel
 
 
 [networkUp]: https://lerchen.net/skynet/static/network-up-36px.png "Only client to server"
