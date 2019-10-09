@@ -35,8 +35,20 @@ Using Firebase Cloud Messaging (FCM) requires the server to keep track of the re
 ### Channels ###
 With the Skynet protocol v4 we had different implementations for many types of communication channels. This concept made abstraction almost impossible and increased the complexity, especially on the server side.
 
-To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with an incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.
+To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with a globally unique incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.  
 In order to move away from the old `UserData` packet, which was prone to concurrency and timing errors, we introduce an additional channel and two more types of messages.
+
+##### SkipCount #####
+As messages are delivered asynchronously, it might happen that they arrive in a different order than their message IDs. Imagine the following situation in a group with Alice, Bob and Charlie:
+
+1. The last message in this channel has `MessageId = 3`
+2. Bob and Charlie send a message at almost the same time.
+3. Bob's message has `MessageId = 5`
+4. Charlie's message has `MessageId = 6`
+5. Charlie's message is delivered to Alice with `SkipCount = 0`
+6. Bob's message is delivered to Alice with `SkipCount = 1`
+
+If Alice would loose her connection after step 5, she would never receive Bob's message because her `LastMessageId` is `6`. Therefore the server sends a `SkipCount` indicating to Alice that she is missing a message. If she doesn't receive this message at the next session restore, her client has to request it from the server.
 
 ##### MessageFlags #####
 `MessageFlags.Loopback` indicates that a message is to be delivered only to the other devices of the sender of this message. Messages with the loopback flag are encrypted using the key of the users _loopback channel_.  
@@ -196,7 +208,8 @@ enum RestoreSessionStatus {
 ### **0x0A** CreateChannel ![networkDuplex] ###
 Sent by the server to a client to create a channel. If it is sent by the client with a random `ChannelId` the server assigns one in the _CreateChannelResponse_ packet.
 ```vpsl
-<Int64 ChannelId><ChannelType:Byte ChannelType><Int64 OwnerId>
+<Int64 ChannelId><ChannelType:Byte ChannelType>
+((ToClient)<Int64 OwnerId>)
 ((ChannelType.Direct)<Int64 CounterpartId>)
 ```
 ```csharp
@@ -234,7 +247,7 @@ The ChannelMessage is the most important packet of the new channel-based protoco
 ```vpsl
 <Byte PacketVersion><Int64 ChannelId>
 ((ToClient)<Int64 SenderId>)<Int64 MessageId>
-((ToClient)<DateTime DispatchTime>)
+((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
 <MessageFlags:Byte MessageFlags>
 ((MessageFlags.FileAttached)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
@@ -258,7 +271,8 @@ If the client wants to send a new message, it chooses a random negative `Message
 ```vpsl
 <Int64 ChannelId><Int64 TempMessageId>
 <MessageSendStatus:Byte StatusCode>
-<Int64 MessageId><DateTime DispatchTime>
+<Int64 MessageId><Int64 SkipCount>
+<DateTime DispatchTime>
 ```
 ```csharp
 enum MessageSendStatus {
