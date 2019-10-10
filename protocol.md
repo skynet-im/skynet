@@ -48,7 +48,7 @@ As messages are delivered asynchronously, it might happen that they arrive in a 
 5. Charlie's message is delivered to Alice with `SkipCount = 0`
 6. Bob's message is delivered to Alice with `SkipCount = 1`
 
-If Alice would loose her connection after step 5, she would never receive Bob's message because her `LastMessageId` is `6`. Therefore the server sends a `SkipCount` indicating to Alice that she is missing a message. If she doesn't receive this message at the next session restore, her client has to request it from the server.
+If Alice would loose her connection after step 5, she would never receive Bob's message because her `LastMessageId` is `6`. Therefore the server sends a `SkipCount` indicating how many message IDs have been skipped regarding all her channels. With this information Alice can notice that she is missing a message. If she doesn't receive this message at the next session restore, her client has to request it from the server.
 
 ##### MessageFlags #####
 `MessageFlags.Loopback` indicates that a message is to be delivered only to the other devices of the sender of this message. Messages with the loopback flag are encrypted using the key of the users _loopback channel_.  
@@ -187,10 +187,11 @@ enum CreateSessionStatus {
 ```
 
 ### **0x08** RestoreSession ![networkUp] ###
-After initializing a connection, the client can restore a session with this packet. The client sends the server its last message for each channel.
+After initializing a connection, the client can restore a session with this packet. The client sends the server its last message and all known channels.
 ```vpsl
 <Int64 AccountId><Byte[32] KeyHash><Int64 SessionId>
-{UInt16 Channels <Int64 ChannelId><Int64 LastMessageId>}
+<Int64 LastMessageId>
+{UInt16 Channels <Int64 ChannelId>}
 ```
 
 ### **0x09** RestoreSessionResponse ![networkDown] ###
@@ -243,7 +244,9 @@ Sent by the server to notify a client that a channel has been deleted permanentl
 ```
 
 ### **0x0B** ChannelMessage ![networkDuplex] ###
-The ChannelMessage is the most important packet of the new channel-based protocol. It acts as a box for many types of packets that can be sent to a channel. Use `AccountId=0` to indicate a global dependency. The initial value for the version numbers is `1`.
+The ChannelMessage is the most important packet of the new channel-based protocol. It acts as a box for many types of packets that can be sent to a channel.  
+Use `AccountId=0` to indicate a global dependency. The initial value for the version numbers is `1`.  
+During the session restore the server will send `SkipCount = -1` which means the client does not have to check that no message is missing.
 ```vpsl
 <Byte PacketVersion><Int64 ChannelId>
 ((ToClient)<Int64 SenderId>)<Int64 MessageId>
@@ -252,8 +255,7 @@ The ChannelMessage is the most important packet of the new channel-based protoco
 ((MessageFlags.FileAttached)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
 [<Byte[] ContentPacket>((MessageFlags.FileAttached)<Byte[] FileKey>)]
-{UInt16 Dependencies <Int64 AccountId>
-<Int64 ChannelId><Int64 MessageId>}
+{UInt16 Dependencies <Int64 AccountId><Int64 MessageId>}
 ```
 ```csharp
 [Flags]
@@ -284,9 +286,16 @@ enum MessageSendStatus {
 ```
 
 ### **0x0E** RequestMessages ![networkUp] ###
-This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
+This packet is sent by the client to request channel messages that have not been synchronized yet.
+
+Use `ChannelId=0` to get messages from arbitrary channels.  
+Setting `After` or `Before` to `0` disables the boundry check.
+
+After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
 ```vpsl
-<Int64 ChannelId><Int64 FirstKnownMessageId><Int64 RequestCount>
+<Int64 ChannelId>
+<Int64 After><Int64 Before>
+<UInt16 MaxCount>
 ```
 
 ### **0x0F** SyncFinished ![networkDown] ###
@@ -335,8 +344,8 @@ This packet is sent by the client to its loopback channel. It has no direct effe
 <KeyFormat:Byte DerivationKeyFormat><Byte[] DerivationKey>
 ```
 ```csharp 
-public enum KeyFormat {
-    // TODO: Add notations
+enum KeyFormat {
+    BouncyCastle = 0,
 }
 ```
 
