@@ -72,12 +72,13 @@ If a client attempts to reference a file that does not exist or that it has no p
 The security of Skynet is based on the user's password:
 1. Password (UTF-8)
 2. `AccountKey` (first 32 bytes for HMAC, last 32 bytes for AES)
-3. `KeyHash` (32 bytes)
+3. `KeyHash` (32 bytes for authentication)
 
 The `AesKey` is derived from the users password with _Argon2id_ using the `SHA256(AccountName)` as salt:
 ```
-AccountKey = Argon2(P: Password, S: SHA256(AccountName), p: 8, T: 64, m: 8192, t: 2, v: {TODO}, y: 2);
-KeyHash = SHA256(AccountKey);
+KeyMaterial = Argon2(P: Password, S: SHA256(AccountName), p: 8, T: 96, m: 8192, t: 2, v: 13, y: 2);
+AccountKey = KeyMaterial.Slice(s: 0, l: 64);
+KeyHash = KeyMaterial.Slice(s: 64, l: 32);
 ```
 
 ## The Protocol ##
@@ -166,7 +167,7 @@ This packet is sent by the client after opening a connection. The `FcmRegistrati
 ```vpsl
 <CreateSessionStatus:Byte StatusCode>
 <Int64 AccountId><Int64 SessionId>
-<String WebToken>
+<Byte[32] SessionToken><String WebToken>
 ```
 ```csharp
 enum CreateSessionStatus {
@@ -178,9 +179,9 @@ enum CreateSessionStatus {
 ```
 
 ### **0x08** RestoreSession ![networkUp] ###
-After initializing a connection, the client can restore a session with this packet. The client sends the server its last message for each channel.
+After initializing a connection, the client can restore a session with this packet. The client sends the server its last message for each channel. There can only be one client connected to the server with the same _SessionId_. Conflicting clients are kicked on automatically.
 ```vpsl
-<Int64 AccountId><Byte[32] KeyHash><Int64 SessionId>
+<Int64 SessionId><Byte[32] SessionToken>
 {UInt16 Channels <Int64 ChannelId><Int64 LastMessageId>}
 ```
 
