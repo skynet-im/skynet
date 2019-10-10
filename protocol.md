@@ -63,7 +63,8 @@ In order to manage key changes and being able to delete messages when they're no
 Profile data can either be shared publicly via the account's account data channel with _MessageFlags.Unencrypted_ or via a profile data channel, which technically inherit from the group channel. To manage permissions, multiple profile data channels containing different members can be created. The account data channel is unique per account and managed by the server.
 
 ### User files ###
-The files attached to media messages are transferred using the VSL 1.2+ encrypted file transfer. Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel channel are allowed to reference it in other channels. This saves a lot of bandwidth when files are forwarded.  
+The files attached to media messages are encrypted and then uploaded to file transfer servers over HTTPS (see [features.md](features.md)).  
+Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel channel are allowed to reference it in other channels. This saves a lot of bandwidth when files are forwarded.  
 When a message is referenced for the first time in a channel and the sender is allowed to use it, this channel is granted permission to share it again. Files without any permissions are deleted by the garbage collector after a certain time. When a message is deleted in a channel that does not hold any other references to this file, the channel looses its permission. When the file has no more permissions, it's instantly deleted by the garbage collector.  
 If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the status code in the `ChannelMessageResponse` packet.
 
@@ -163,7 +164,9 @@ This packet is sent by the client after opening a connection. The `FcmRegistrati
 
 ### **0x07** CreateSessionResponse ![networkDown] ###
 ```vpsl
-<Int64 AccountId><Int64 SessionId><CreateSessionStatus:Byte StatusCode>
+<CreateSessionStatus:Byte StatusCode>
+<Int64 AccountId><Int64 SessionId>
+<String WebToken>
 ```
 ```csharp
 enum CreateSessionStatus {
@@ -236,9 +239,12 @@ The ChannelMessage is the most important packet of the new channel-based protoco
 ((ToClient)<Int64 SenderId>)<Int64 MessageId>
 ((ToClient)<DateTime DispatchTime>)
 <MessageFlags:Byte MessageFlags>
-((MessageFlags.FileAttached)<Int64 FileId>)
+((MessageFlags.ExternalFile)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
-[<Byte[] ContentPacket>((MessageFlags.FileAttached)<Byte[] FileKey>)]
+[
+    <Byte[] ContentPacket>
+    ((MessageFlags.MediaMessage)<File File>)
+]
 {UInt16 Dependencies <Int64 AccountId>
 <Int64 ChannelId><Int64 MessageId>}
 ```
@@ -248,9 +254,22 @@ enum MessageFlags {
     None = 0,
     Loopback = 1,
     Unencrypted = 2,
-    FileAttached = 4,
-    NoSenderSync = 8
+    NoSenderSync = 4,
+    MediaMessage = 8,
+    ExternalFile = 16
 }
+```
+```vspl
+<ShortString Name>
+<DateTime CreationTime>
+<DateTime LastWriteTime>
+<ShortString ThumbnailContentType>
+<Byte[] ThumbnailData>
+((MessageFlags.ExternalFile)
+    <ShortString ContentType>
+    <Int64 Length>
+    <Byte[32] Key>
+)
 ```
 
 ### **0x0C** ChannelMessageResponse ![networkDown] ###
@@ -543,18 +562,6 @@ This packet contains all results of a _SearchAccount_ query and forwards public 
 }
 ```
 
-### **0x30** FileUpload ![networkUp] ###
-Sent by the client when uploading a file to request a file id.
-```vpsl
-// No additional content
-```
-
-### **0x31** FileUploadResponse ![networkDown] ###
-The server's response to `0x30 FileUpload`. This packet contains the file id the client needs for uploading a file.
-```vpsl
-<Int64 FileId>
-```
-
 ### **0x32** DeviceListRequest ![networkUp] ###
 Sent by the client to request device list details.
 ```vpsl
@@ -572,6 +579,8 @@ This packet contributes real time data to the general DeviceList packet.
 - **0x10** RealTimeMessage
 - **0x11** SubscribeChannel
 - **0x12** UnsubscribeChannel
+- **0x30** FileUpload
+- **0x31** FileUploadResponse
 
 
 [networkUp]: https://lerchen.net/skynet/static/network-up-36px.png "Only client to server"

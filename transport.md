@@ -43,6 +43,7 @@ void Write(byte packetId, int contentLength)
 ### PacketBuffer
 User content always uses little endian byte order and has different length markers. Strings are always UTF-8 encoded.
 
+`ShortString` and `ShortByteArray` are length prefixed with an `UInt8`.
 `String` and `ByteArray` are length prefixed with an `UInt16`.  
 `LongString` and `LongByteArray` are prefixed with an `Int32`.
 
@@ -50,10 +51,16 @@ User content always uses little endian byte order and has different length marke
 
 Unlike VSL the new transport protocol will not offer a full end-to-end encrypted file transfer. Small files (≤ 50 KiB) can be stored inside the channel message packet. Large files are uploaded over HTTPS to a mirror server and can be retrieved on the same way.
 
+> The domain names are examples and might be different in production.
+
 ### Upload
 
-1. Client requests file upload URL
-2. Skynet server responds with URL
+1. Client requests file upload URL  
+`PUT https://api.skynet.app/filetransfer/upload?session={sessionId}&token={webToken}`
+2. Skynet server responds  
+`307 Temporary Redirect`  
+`Location: ...`  
+`X-Skynet-FileId: {fileId}`
 3. Client uploads file  
 `PUT https://cdn.skynet.app/filetransfer/{fileId}?token={signedToken}`
 4. CDN Server notifies Skynet server on success  
@@ -73,9 +80,12 @@ Unlike VSL the new transport protocol will not offer a full end-to-end encrypted
 `204 No Content`
 
 ### Download file
-1. Client requests file download URL
-2. Skynet server responds with URL
+1. Client requests file download URL  
+`GET https://api.skynet.app/filetransfer/{fileId}?session={sessionId}&token={webToken}`
+2. Skynet server responds  
+`307 Temporary Redirect`  
+`Location: ...`
 3. Client downloads file possibly with `Content-Range`  
 `GET https://cdn.skynet.app/filetransfer/{fileId}?token={signedToken}`
-4. CDN Server responds client
+4. CDN Server responds client  
 `200 OK`
