@@ -35,8 +35,20 @@ Using Firebase Cloud Messaging (FCM) requires the server to keep track of the re
 ### Channels ###
 With the Skynet protocol v4 we had different implementations for many types of communication channels. This concept made abstraction almost impossible and increased the complexity, especially on the server side.
 
-To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with an incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.
+To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with a globally unique incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.  
 In order to move away from the old `UserData` packet, which was prone to concurrency and timing errors, we introduce an additional channel and two more types of messages.
+
+##### SkipCount #####
+As messages are delivered asynchronously, it might happen that they arrive in a different order than their message IDs. Imagine the following situation in a group with Alice, Bob and Charlie:
+
+1. The last message in this channel has `MessageId = 3`
+2. Bob and Charlie send a message at almost the same time.
+3. Bob's message has `MessageId = 5`
+4. Charlie's message has `MessageId = 6`
+5. Charlie's message is delivered to Alice with `SkipCount = 0`
+6. Bob's message is delivered to Alice with `SkipCount = 1`
+
+If Alice would loose her connection after step 5, she would never receive Bob's message because her `LastMessageId` is `6`. Therefore the server sends a `SkipCount` indicating how many message IDs have been skipped regarding all her channels. With this information Alice can notice that she is missing a message. If she doesn't receive this message at the next session restore, her client has to request it from the server.
 
 ##### MessageFlags #####
 `MessageFlags.Loopback` indicates that a message is to be delivered only to the other devices of the sender of this message. Messages with the loopback flag are encrypted using the key of the users _loopback channel_.  
@@ -179,10 +191,11 @@ enum CreateSessionStatus {
 ```
 
 ### **0x08** RestoreSession ![networkUp] ###
-After initializing a connection, the client can restore a session with this packet. The client sends the server its last message for each channel. There can only be one client connected to the server with the same _SessionId_. Conflicting clients are kicked on automatically.
+After initializing a connection, the client can restore a session with this packet. The client sends the server its last message and all known channels. There can only be one client connected to the server with the same _SessionId_. Conflicting clients are kicked on automatically.
 ```vpsl
 <Int64 SessionId><Byte[32] SessionToken>
-{UInt16 Channels <Int64 ChannelId><Int64 LastMessageId>}
+<Int64 LastMessageId>
+{UInt16 Channels <Int64 ChannelId>}
 ```
 
 ### **0x09** RestoreSessionResponse ![networkDown] ###
@@ -200,7 +213,8 @@ enum RestoreSessionStatus {
 ### **0x0A** CreateChannel ![networkDuplex] ###
 Sent by the server to a client to create a channel. If it is sent by the client with a random `ChannelId` the server assigns one in the _CreateChannelResponse_ packet.
 ```vpsl
-<Int64 ChannelId><ChannelType:Byte ChannelType><Int64 OwnerId>
+<Int64 ChannelId><ChannelType:Byte ChannelType>
+((ToClient)<Int64 OwnerId>)
 ((ChannelType.Direct)<Int64 CounterpartId>)
 ```
 ```csharp
@@ -234,11 +248,13 @@ Sent by the server to notify a client that a channel has been deleted permanentl
 ```
 
 ### **0x0B** ChannelMessage ![networkDuplex] ###
-The ChannelMessage is the most important packet of the new channel-based protocol. It acts as a box for many types of packets that can be sent to a channel. Use `AccountId=0` to indicate a global dependency. The initial value for the version numbers is `1`.
+The ChannelMessage is the most important packet of the new channel-based protocol. It acts as a box for many types of packets that can be sent to a channel.  
+Use `AccountId=0` to indicate a global dependency. The initial value for the version numbers is `1`.  
+During the session restore the server will send `SkipCount = -1` which means the client does not have to check that no message is missing.
 ```vpsl
 <Byte PacketVersion><Int64 ChannelId>
 ((ToClient)<Int64 SenderId>)<Int64 MessageId>
-((ToClient)<DateTime DispatchTime>)
+((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
 <MessageFlags:Byte MessageFlags>
 ((MessageFlags.ExternalFile)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
@@ -246,8 +262,7 @@ The ChannelMessage is the most important packet of the new channel-based protoco
     <ByteArray ContentPacket>
     ((MessageFlags.MediaMessage)<File File>)
 ]
-{UInt16 Dependencies <Int64 AccountId>
-<Int64 ChannelId><Int64 MessageId>}
+{UInt16 Dependencies <Int64 AccountId><Int64 MessageId>}
 ```
 ```csharp
 [Flags]
@@ -278,7 +293,8 @@ If the client wants to send a new message, it chooses a random negative `Message
 ```vpsl
 <Int64 ChannelId><Int64 TempMessageId>
 <MessageSendStatus:Byte StatusCode>
-<Int64 MessageId><DateTime DispatchTime>
+<Int64 MessageId><Int64 SkipCount>
+<DateTime DispatchTime>
 ```
 ```csharp
 enum MessageSendStatus {
@@ -290,9 +306,16 @@ enum MessageSendStatus {
 ```
 
 ### **0x0E** RequestMessages ![networkUp] ###
-This packet is sent by the client to request channel messages that have not been synchronized yet. To request all missing messages use `RequestCount=0`. After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
+This packet is sent by the client to request channel messages that have not been synchronized yet.
+
+Use `ChannelId=0` to get messages from arbitrary channels.  
+Setting `After` or `Before` to `0` disables the boundry check.
+
+After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
 ```vpsl
-<Int64 ChannelId><Int64 FirstKnownMessageId><Int64 RequestCount>
+<Int64 ChannelId>
+<Int64 After><Int64 Before>
+<UInt16 MaxCount>
 ```
 
 ### **0x0F** SyncFinished ![networkDown] ###
@@ -341,8 +364,8 @@ This packet is sent by the client to its loopback channel. It has no direct effe
 <KeyFormat:Byte DerivationKeyFormat><ByteArray DerivationKey>
 ```
 ```csharp 
-public enum KeyFormat {
-    // TODO: Add notations
+enum KeyFormat {
+    BouncyCastle = 0,
 }
 ```
 
