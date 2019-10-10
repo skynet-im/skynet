@@ -63,7 +63,7 @@ In order to manage key changes and being able to delete messages when they're no
 Profile data can either be shared publicly via the account's account data channel with _MessageFlags.Unencrypted_ or via a profile data channel, which technically inherit from the group channel. To manage permissions, multiple profile data channels containing different members can be created. The account data channel is unique per account and managed by the server.
 
 ### User files ###
-The files attached to media messages are encrypted and then uploaded to file transfer servers over HTTPS (see [features.md](features.md)).  
+The files attached to media messages are encrypted using `AES-GCM-256` and then uploaded to file transfer servers over HTTPS (see [features.md](features.md)).  
 Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel channel are allowed to reference it in other channels. This saves a lot of bandwidth when files are forwarded.  
 When a message is referenced for the first time in a channel and the sender is allowed to use it, this channel is granted permission to share it again. Files without any permissions are deleted by the garbage collector after a certain time. When a message is deleted in a channel that does not hold any other references to this file, the channel looses its permission. When the file has no more permissions, it's instantly deleted by the garbage collector.  
 If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the status code in the `ChannelMessageResponse` packet.
@@ -87,7 +87,7 @@ The protocol section consists of packets, which each have a name, an ID and the 
 This packet is sent before any other packet to ensure that the client is using the latest version.
 `ProtocolVersion` is necessary to catch breaking changes and enables the server to ignore indev versions with the same protocol version.
 ```vpsl
-<Int32 ProtocolVersion><String ApplicationIdentifier><Int32 VersionCode>
+<Int32 ProtocolVersion><ShortString ApplicationIdentifier><Int32 VersionCode>
 ```
 The application identifier consists of the platform identifier and the package/assembly name e.g. `android/de.vectordata.skynet`.
 
@@ -96,7 +96,7 @@ This is the server's response to _0x00 ConnectionHandshake_. This packet finishe
 
 ```vpsl
 <ConnectionState:Byte ConnectionState>
-((ConnectionState != Valid)<Int32 LatestVersionCode><String LatestVersion>)
+((ConnectionState != Valid)<Int32 LatestVersionCode><ShortString LatestVersion>)
 ```
 ```csharp
 enum ConnectionState {
@@ -109,7 +109,7 @@ enum ConnectionState {
 ### **0x02** CreateAccount ![networkUp] ###
 This packet is sent when the user registers a new account. After e-mail address verification is completed, the server has to create the loopback channel and send a _PasswordUpdate_ packet as base revision. For further account initialization see _SyncFinished_. If this packet is sent referencing an unconfirmed account with the correct password, the confirmation mail is sent again.
 ```vpsl
-<String AccountName><Byte[32] KeyHash>
+<ShortString AccountName><Byte[32] KeyHash>
 ```
 
 ### **0x03** CreateAccountResponse ![networkDown] ###
@@ -159,7 +159,7 @@ enum DeleteAccountStatus {
 ### **0x06** CreateSession ![networkUp] ###
 This packet is sent by the client after opening a connection. The `FcmRegistrationToken` can be left empty if it is not necessary (e.g. for a desktop client). The Skynet server will send a Firebase message if a _ChatMessage_ could not be delivered directly to a client. Client applications have to reconnect until they receive a _SyncFinished_ packet. A newly created session does not need to be restored manually.
 ```vpsl
-<String AccountName><Byte[32] KeyHash><String FcmRegistrationToken>
+<ShortString AccountName><Byte[32] KeyHash><String FcmRegistrationToken>
 ```
 
 ### **0x07** CreateSessionResponse ![networkDown] ###
@@ -242,7 +242,7 @@ The ChannelMessage is the most important packet of the new channel-based protoco
 ((MessageFlags.ExternalFile)<Int64 FileId>)
 <Byte ContentPacketId><Byte ContentPacketVersion>
 [
-    <Byte[] ContentPacket>
+    <ByteArray ContentPacket>
     ((MessageFlags.MediaMessage)<File File>)
 ]
 {UInt16 Dependencies <Int64 AccountId>
@@ -264,7 +264,7 @@ enum MessageFlags {
 <DateTime CreationTime>
 <DateTime LastWriteTime>
 <ShortString ThumbnailContentType>
-<Byte[] ThumbnailData>
+<ByteArray ThumbnailData>
 ((MessageFlags.ExternalFile)
     <ShortString ContentType>
     <Int64 Length>
@@ -311,33 +311,33 @@ When a client receives this packet it should ensure that the following tasks hav
 ### **0x13** QueueMailAddressChange ![networkDuplex] ###
 This packet is sent by the client to its loopback channel using `MessageFlags.Unencrypted`. A message is sent to the old mail address to notify that it is about to be replaced.
 ```vpsl
-<String NewMailAddress>
+<ShortString NewMailAddress>
 ```
 
 ### **0x14** MailAddress ![networkDown] ###
 When the server has verified the client's new mail address, it sends this packet to the client's loopback channel using `MessageFlags.Unencrypted`. If the new mail address is not verified within 24 hours, the address change is cancelled.
 ```vpsl
-<String MailAddress>
+<ShortString MailAddress>
 ```
 
 ### **0x15** PasswordUpdate ![networkDuplex] ###
 This packet is sent to the loopback channel with `MessageFlags.Unencrypted`. It informs the server and other devices of a password change and acts as a base revision for packets with `MessageFlags.Loopback`. Because the _LoopbackKeyNotify_ packet has to be sent in one transaction with this packet, the encrypted _LoopbackKeyNotifiy_ packet is sent to the server inside of this packet and then inserted by the server. This packet is generated by the server after an account is created.
 ```vpsl
 @dependency LoopbackKeyNotify // lazy
-((ToServer)<Byte[] LoopbackKeyNotify>)<Byte[32] KeyHash>
+((ToServer)<ByteArray LoopbackKeyNotify>)<Byte[32] KeyHash>
 ```
 
 ### **0x16** LoopbackKeyNotify ![networkDuplex] ###
 This packet is sent to the server inside of the _PasswordUpdate_ packet encrypted with the new key which is referenced as dependency. A dependency from the associated _PasswordUpdate_ packet is automatically injected. The server echoes this packet to the client's loopback channel.
 ```vpsl
-<Byte[] Key>
+<Byte[64] Key>
 ```
 
 ### **0x17** PrivateKeys ![networkDuplex] ###
 This packet is sent by the client to its loopback channel. It has no direct effect and is only used as a dependency.
 ```vpsl
-<KeyFormat:Byte SignatureKeyFormat><Byte[] SignatureKey>
-<KeyFormat:Byte DerivationKeyFormat><Byte[] DerivationKey>
+<KeyFormat:Byte SignatureKeyFormat><ByteArray SignatureKey>
+<KeyFormat:Byte DerivationKeyFormat><ByteArray DerivationKey>
 ```
 ```csharp 
 public enum KeyFormat {
@@ -349,8 +349,8 @@ public enum KeyFormat {
 This packet is sent by the client to its loopback channel using `MessageFlags.Unencrypted` with a mandatory reference to the matching private key as a dependency.  
 ```vpsl
 @dependency PrivateKeys // only to server
-<KeyFormat:Byte SignatureKeyFormat><Byte[] SignatureKey>
-<KeyFormat:Byte DerivationKeyFormat><Byte[] DerivationKey>
+<KeyFormat:Byte SignatureKeyFormat><ByteArray SignatureKey>
+<KeyFormat:Byte DerivationKeyFormat><ByteArray DerivationKey>
 ```
 
 ### **0x1A** VerifiedKeys ![networkDuplex] ###
@@ -370,7 +370,7 @@ This packet is injected by the server with `MessageFlags.Unencrypted` and acts a
 ### **0x1C** DirectChannelCustomization ![networkDuplex] ###
 This packet is sent by the client to the associated direct channel with `MessageFlags.Loopback`.
 ```vpsl
-<String CustomNickname><ImageShape:Byte ProfileImageShape>
+<ShortString CustomNickname><ImageShape:Byte ProfileImageShape>
 ```
 ```csharp
 public enum ImageShape {
@@ -385,7 +385,7 @@ public enum ImageShape {
 ### **0x1D** GroupChannelKeyNotify ![networkDuplex] ###
 This packet is sent over a direct channel from a group admin to all clients. Because the admin's devices do not need all of these messages, the client should use `MessageFlags.NoSenderSync`. This packet notifies all members about a group channel key change, which becomes active when an administrator client sends a _GroupChannelUpdate_ packet.
 ```vpsl
-<Int64 ChannelId><Byte[] NewKey><Byte[] HistoryKey>
+<Int64 ChannelId><Byte[64] NewKey><Byte[64] HistoryKey>
 ```
 
 ### **0x1E** GroupChannelUpdate ![networkDuplex] ###
@@ -394,7 +394,7 @@ To change the group channel key, the admin sends an update to each client in the
 @dependency GroupChannelKeyNotify // per account
 <Int64 GroupRevision>{UInt16 Members
 <Int64 AccountId><GroupMemberFlags:Byte Flags>}
-[UInt32 ChannelHistory <Byte[] ChannelKey><Byte[] HistoryKey>]
+[UInt32 ChannelHistory <Byte[64] ChannelKey><Byte[64] HistoryKey>]
 ```
 ```csharp
 [Flags]
@@ -480,7 +480,7 @@ The client sends the DaystreamMessage packet to any profile data channel. It is 
 ### **0x25** Nickname ![networkDuplex] ###
 The Nickname packet is sent by a client to any profile data channel. If sent with `MessageFlags.Unencrypted`, the nickname is publicly visible. Nickname packets always use `PersistenceMode.KeepLast`. 
 ```vpsl
-<String Nickname>
+<ShortString Nickname>
 ```
 
 ### **0x26** Bio ![networkDuplex] ###
@@ -505,7 +505,7 @@ The blocked content packet is sent by a client to it's loopback channel with `Me
 ### **0x29** DeviceList ![networkDown] ###
 The device list packet is sent by the server to the clients loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`. With this data the client can inform the user after a new login.
 ```vpsl
-{UInt16 Sessions <Int64 SessionId><DateTime CreationTime><String ApplicationIdentifier>}
+{UInt16 Sessions <Int64 SessionId><DateTime CreationTime><ShortString ApplicationIdentifier>}
 ```
 
 ### **0x2A** BackgroundImage ![networkDuplex] ###
@@ -550,15 +550,15 @@ This packet informs the server about the current client state.
 ### On demand packets ###
 ### **0x2D** SearchAccount ![networkUp] ###
 ```vpsl
-<String Query>
+<ShortString Query>
 ```
 
 ### **0x2E** SearchAccountResponse ![networkDown] ###
 This packet contains all results of a _SearchAccount_ query and forwards public profile data.
 ```vpsl
 {UInt16 Results
-    <Int64 AccountId><String AccountName>
-    {UInt16 ForwardedPackets <Byte PacketId><Byte[] PacketContent>}
+    <Int64 AccountId><ShortString AccountName>
+    {UInt16 ForwardedPackets <Byte PacketId><ByteArray PacketContent>}
 }
 ```
 
