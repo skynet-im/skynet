@@ -255,7 +255,7 @@ enum RestoreSessionStatus {
 Sent by the server to a client to create a channel. If it is sent by the client with a random `ChannelId` the server assigns one in the _CreateChannelResponse_ packet.
 ```vpsl
 <Int64 ChannelId><ChannelType:Byte ChannelType>
-((ToClient)<Int64 OwnerId>)
+((ToClient)<Int64 OwnerId><DateTime CreationTime>)
 ((ChannelType.Direct)<Int64 CounterpartId>)
 ```
 ```csharp
@@ -271,7 +271,8 @@ enum ChannelType {
 ### **0x2F** CreateChannelResponse ![networkDown] ###
 The server responds to a _CreateChannel_ packet with this packet. It tells the client about the status and the `ChannelId`.
 ```vpsl
-<Int64 TempChannelId><ChannelCreateStatus:Byte StatusCode><Int64 ChannelId>
+<Int64 TempChannelId><ChannelCreateStatus:Byte StatusCode>
+<Int64 ChannelId><DateTime CreationTime>
 ```
 ```csharp
 enum ChannelCreateStatus {
