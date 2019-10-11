@@ -96,6 +96,47 @@ KeyHash = KeyMaterial.Slice(s: 64, l: 32);
 ## The Protocol ##
 The protocol section consists of packets, which each have a name, an ID and the specification written in `VPSL`.
 
+### ChannelMessage ###
+The ChannelMessage used to be the most important packet of the new channel-based protocol.
+Now it is no independent packet anymore but rather a specific type of packet. All channel messages (marked with `@message`) inherit its class and behavior.  
+Use `AccountId=0` to indicate a global dependency. The initial value for the version number is `1`.  
+During the session restore the server will send `SkipCount = -1` which means the client does not have to check that no message is missing.
+```vpsl
+<Byte PacketVersion><Int64 ChannelId>
+((ToClient)<Int64 SenderId>)<Int64 MessageId>
+((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
+<MessageFlags:Byte MessageFlags>
+((MessageFlags.ExternalFile)<Int64 FileId>)
+[
+    <ByteArray ContentPacket>
+    ((MessageFlags.MediaMessage)<File File>)
+]
+{UInt16 Dependencies <Int64 AccountId><Int64 MessageId>}
+```
+```csharp
+[Flags]
+enum MessageFlags {
+    None = 0,
+    Loopback = 1,
+    Unencrypted = 2,
+    NoSenderSync = 4,
+    MediaMessage = 8,
+    ExternalFile = 16
+}
+```
+```vspl
+<ShortString Name>
+<DateTime CreationTime>
+<DateTime LastWriteTime>
+<ShortString ThumbnailContentType>
+<ByteArray ThumbnailData>
+((MessageFlags.ExternalFile)
+    <ShortString ContentType>
+    <Int64 Length>
+    <Byte[32] Key>
+)
+```
+
 ### **0x00** ConnectionHandshake ![networkUp] ###
 This packet is sent before any other packet to ensure that the client is using the latest version.
 `ProtocolVersion` is necessary to catch breaking changes and enables the server to ignore indev versions with the same protocol version.
@@ -247,47 +288,6 @@ Sent by the server to notify a client that a channel has been deleted permanentl
 <Int64 ChannelId>
 ```
 
-### **0x0B** ChannelMessage ![networkDuplex] ###
-The ChannelMessage is the most important packet of the new channel-based protocol. It acts as a box for many types of packets that can be sent to a channel.  
-Use `AccountId=0` to indicate a global dependency. The initial value for the version numbers is `1`.  
-During the session restore the server will send `SkipCount = -1` which means the client does not have to check that no message is missing.
-```vpsl
-<Byte PacketVersion><Int64 ChannelId>
-((ToClient)<Int64 SenderId>)<Int64 MessageId>
-((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
-<MessageFlags:Byte MessageFlags>
-((MessageFlags.ExternalFile)<Int64 FileId>)
-<Byte ContentPacketId><Byte ContentPacketVersion>
-[
-    <ByteArray ContentPacket>
-    ((MessageFlags.MediaMessage)<File File>)
-]
-{UInt16 Dependencies <Int64 AccountId><Int64 MessageId>}
-```
-```csharp
-[Flags]
-enum MessageFlags {
-    None = 0,
-    Loopback = 1,
-    Unencrypted = 2,
-    NoSenderSync = 4,
-    MediaMessage = 8,
-    ExternalFile = 16
-}
-```
-```vspl
-<ShortString Name>
-<DateTime CreationTime>
-<DateTime LastWriteTime>
-<ShortString ThumbnailContentType>
-<ByteArray ThumbnailData>
-((MessageFlags.ExternalFile)
-    <ShortString ContentType>
-    <Int64 Length>
-    <Byte[32] Key>
-)
-```
-
 ### **0x0C** ChannelMessageResponse ![networkDown] ###
 If the client wants to send a new message, it chooses a random negative `MessageId`. The server responds with this packet and assigns a new `MessageId`. The `DispatchTime` specifies when the server has processed this message.
 ```vpsl
@@ -335,18 +335,22 @@ When a client receives this packet it should ensure that the following tasks hav
 ### **0x13** QueueMailAddressChange ![networkDuplex] ###
 This packet is sent by the client to its loopback channel using `MessageFlags.Unencrypted`. A message is sent to the old mail address to notify that it is about to be replaced.
 ```vpsl
+@message Loopback Unencrypted
 <ShortString NewMailAddress>
 ```
 
 ### **0x14** MailAddress ![networkDown] ###
-When the server has verified the client's new mail address, it sends this packet to the client's loopback channel using `MessageFlags.Unencrypted`. If the new mail address is not verified within 24 hours, the address change is cancelled.
+When the server has verified the client's new mail address, it sends this packet to the client's account data channel.
+If the new mail address is not verified within 24 hours, the address change is cancelled.
 ```vpsl
+@message Unencrypted
 <ShortString MailAddress>
 ```
 
 ### **0x15** PasswordUpdate ![networkDuplex] ###
 This packet is sent to the loopback channel with `MessageFlags.Unencrypted`. It informs the server and other devices of a password change and acts as a base revision for packets with `MessageFlags.Loopback`. Because the _LoopbackKeyNotify_ packet has to be sent in one transaction with this packet, the encrypted _LoopbackKeyNotifiy_ packet is sent to the server inside of this packet and then inserted by the server. This packet is generated by the server after an account is created.
 ```vpsl
+@message Loopback Unencrypted
 @dependency LoopbackKeyNotify // lazy
 ((ToServer)<ByteArray LoopbackKeyNotify>)<Byte[32] KeyHash>
 ```
@@ -354,12 +358,14 @@ This packet is sent to the loopback channel with `MessageFlags.Unencrypted`. It 
 ### **0x16** LoopbackKeyNotify ![networkDuplex] ###
 This packet is sent to the server inside of the _PasswordUpdate_ packet encrypted with the new key which is referenced as dependency. A dependency from the associated _PasswordUpdate_ packet is automatically injected. The server echoes this packet to the client's loopback channel.
 ```vpsl
+@message Loopback
 <Byte[64] Key>
 ```
 
 ### **0x17** PrivateKeys ![networkDuplex] ###
 This packet is sent by the client to its loopback channel. It has no direct effect and is only used as a dependency.
 ```vpsl
+@message Loopback
 <KeyFormat:Byte SignatureKeyFormat><ByteArray SignatureKey>
 <KeyFormat:Byte DerivationKeyFormat><ByteArray DerivationKey>
 ```
@@ -370,8 +376,9 @@ enum KeyFormat {
 ```
 
 ### **0x18** PublicKeys ![networkDuplex] ###
-This packet is sent by the client to its loopback channel using `MessageFlags.Unencrypted` with a mandatory reference to the matching private key as a dependency.  
+This packet is sent by the client to its account data channel with a mandatory reference to the matching private key as a dependency.
 ```vpsl
+@message Unencrypted
 @dependency PrivateKeys // only to server
 <KeyFormat:Byte SignatureKeyFormat><ByteArray SignatureKey>
 <KeyFormat:Byte DerivationKeyFormat><ByteArray DerivationKey>
@@ -380,12 +387,15 @@ This packet is sent by the client to its loopback channel using `MessageFlags.Un
 ### **0x1A** VerifiedKeys ![networkDuplex] ###
 This packet is optional and can be used for a QR-code based verification. It saves the SHA-256 over the counterpart's entire _PublicKeys_ packet and is sent by the client to the associated direct channel with `MessageFlags.Loopback`.
 ```vpsl
+@message Loopback
 <Byte[32] Sha256>
 ```
 
 ### **0x1B** DirectChannelUpdate ![networkDown] ###
-This packet is injected by the server with `MessageFlags.Unencrypted` and acts as base dependency for following channel messages in direct channels. It references a keypair for two perspectives and thereby two `PrivateKeys` packets and two `PublicKeys` packets.
+This packet is injected by the server and acts as base dependency for following channel messages in direct channels.
+It references a keypair for two perspectives and thereby two `PrivateKeys` packets and two `PublicKeys` packets.
 ```vpsl
+@message Unencrypted
 @dependency PrivateKeys & PublicKeys // Alice's private and Bob's public key, specific for Alice's account
 @dependency PrivateKeys & PublicKeys // Bob's private and Alice's public key, specific for Bob's account
 // No additional content
@@ -394,6 +404,7 @@ This packet is injected by the server with `MessageFlags.Unencrypted` and acts a
 ### **0x1C** DirectChannelCustomization ![networkDuplex] ###
 This packet is sent by the client to the associated direct channel with `MessageFlags.Loopback`.
 ```vpsl
+@message Loopback
 <ShortString CustomNickname><ImageShape:Byte ProfileImageShape>
 ```
 ```csharp
@@ -409,12 +420,14 @@ public enum ImageShape {
 ### **0x1D** GroupChannelKeyNotify ![networkDuplex] ###
 This packet is sent over a direct channel from a group admin to all clients. Because the admin's devices do not need all of these messages, the client should use `MessageFlags.NoSenderSync`. This packet notifies all members about a group channel key change, which becomes active when an administrator client sends a _GroupChannelUpdate_ packet.
 ```vpsl
+@message NoSenderSync
 <Int64 ChannelId><Byte[64] NewKey><Byte[64] HistoryKey>
 ```
 
 ### **0x1E** GroupChannelUpdate ![networkDuplex] ###
 To change the group channel key, the admin sends an update to each client in the group via direct channels. To do so, the client sends this packet with `MessageFlags.Unencrypted` and a dependency referencing all direct channel messages. The incremental `GroupRevision` counter is checked by the server and ensures that no concurrent changes are made. Following messages depend on this packet to specify the cryptographic key they use. When used to share profile data, all members should be invisible. The encrypted content uses the `HistoryKey` from the _GroupChannelKeyNotify_ packet if supplied to the matching client. With this key, the client can resolve all former channel and history keys.
 ```vpsl
+@message Unencrypted
 @dependency GroupChannelKeyNotify // per account
 <Int64 GroupRevision>{UInt16 Members
 <Int64 AccountId><GroupMemberFlags:Byte Flags>}
@@ -431,16 +444,11 @@ enum GroupMemberFlags {
 }
 ```
 
-### **0x1F** ProfileDataChannelUpdate ###
-This packet is sent by a client to one of its profile data channels. It specifies which data is shared over this channel.
-```vpsl
-// Reserved for permission system in release v1.1+
-```
-
 ### **0x19** ArchiveChannel ![networkDuplex] ###
 This changes a channel's archive mode which is necessary to avoid sending messages to a deleted or blocked channel.
 In contrast to deleted channels, clients can still send packets like `GroupChannelKeyNotify` over blocked channels.
 ```vpsl
+@message Unencrypted
 <ArchiveMode:Byte ArchiveMode>
 ```
 ```csharp
@@ -452,8 +460,13 @@ enum ArchiveMode {
 ```
 
 ### **0x20** ChatMessage ![networkDuplex] ### 
-The client sends a ChatMessage packet to one specific conversation channel. If the user wants to send a file along with the message, the client adds the `MessageFlags.FileAttached` flag. The packet is always encrypted using the conversation key. A message can always have a text and can always quote another message, regardless of the message type. For example, the user could quote a text message and answer with a voice message or send a contact and write some text in the same message. If no message is quoted, set `QuotedMessage` to `0`. Even if a message is quoted, there is only the dependency to a channel base revision.
+The client sends a ChatMessage packet to one specific conversation channel.
+Please look at the documentation of _ChannelMessage_ to see how to send media messages.
+Chat messages are always encrypted using the conversation key.
+A message can always have a text and can always quote another message, regardless of the message type. For example, the user could quote a text message and answer with a voice message or send a contact and write some text in the same message.
+If no message is quoted, set `QuotedMessage` to `0`. Even if a message is quoted, there is only the dependency to a channel base revision.
 ```vpsl
+@message [MediaMessage] [ExternalFile]
 <MessageType:Byte MessageType><String Text><Int64 QuotedMessage>
 ```
 ```csharp
@@ -471,6 +484,7 @@ enum MessageType {
 ### **0x21** MessageOverride ![networkDuplex] ###
 To edit or delete a message or a daystream entry, the client sends a MessageOverride packet to the respective conversation channel with a dependency to the respective _ChatMessage_ or _DaystreamMessage_.
 ```vpsl
+@message
 @dependency ChatMessage | DaystreamMessage
 <OverrideAction:Byte Action>((OverrideAction == Edit)<String NewText>)
 ```
@@ -484,6 +498,7 @@ enum OverrideAction {
 ### **0x22** MessageReceived ![networkDuplex] ###
 The client sends this packet when it has received a chat message or a daystream to the respective channel with `MessageFlags.Unencrypted`. The `MessageId` is taken from the dependency (no dependency on _ChannelKeyChange_).
 ```vpsl
+@message Unencrypted
 @dependency ChatMessage | DaystreamMessage
 // No additional content
 ```
@@ -491,6 +506,7 @@ The client sends this packet when it has received a chat message or a daystream 
 ### **0x23** MessageRead ![networkDuplex] ###
 The client sends this packet when the user has viewed a chat message or a daystream to the respective channel. The received confirmation (`0x22`) can omitted if the read confirmation is sent directly. Handling is the same as `0x22 MessageReceived`.
 ```vpsl
+@message Unencrypted
 @dependency ChatMessage | DaystreamMessage
 // No additional content
 ```
@@ -498,30 +514,35 @@ The client sends this packet when the user has viewed a chat message or a daystr
 ### **0x24** DaystreamMessage ![networkDuplex] ###
 The client sends the DaystreamMessage packet to any profile data channel. It is always encrypted, since daystream posts are only visible to contacts. 
 ```vpsl
+@message [MediaMessage] [ExternalFile]
 <MessageType:Byte MessageType><String Text>
 ```
 
 ### **0x25** Nickname ![networkDuplex] ###
 The Nickname packet is sent by a client to any profile data channel. If sent with `MessageFlags.Unencrypted`, the nickname is publicly visible. Nickname packets always use `PersistenceMode.KeepLast`. 
 ```vpsl
+@message [Unencrypted]
 <ShortString Nickname>
 ```
 
 ### **0x26** Bio ![networkDuplex] ###
 The Bio packet is sent by a client to any profile data channel. If it is sent with `MessageFlags.Unencrypted`, the profile image is publicly visible. Bio packets always use `PersistenceMode.KeepLast`. 
 ```vpsl
+@message [Unencrypted]
 <String Bio>
 ```
 
 ### **0x27** ProfileImage ![networkDuplex] ###
 Similar to Bio packet. This packet uses the `FileId` of its container.
 ```vpsl
+@message [Unencrypted] [MediaMessage] [ExternalFile]
 <String Caption>
 ```
 
 ### **0x28** BlockList ![networkDuplex] ###
 The blocked content packet is sent by a client to it's loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`. The server will then filter contact requests or group invites.
 ```vpsl
+@message Loopback Unencrypted
 {UInt16 BlockedAccounts <Int64 AccountId>}
 {UInt16 BlockedConversations <Int64 ChannelId>}
 ```
@@ -529,18 +550,21 @@ The blocked content packet is sent by a client to it's loopback channel with `Me
 ### **0x29** DeviceList ![networkDown] ###
 The device list packet is sent by the server to the clients loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`. With this data the client can inform the user after a new login.
 ```vpsl
+@message Loopback Unencrypted
 {UInt16 Sessions <Int64 SessionId><DateTime CreationTime><ShortString ApplicationIdentifier>}
 ```
 
 ### **0x2A** BackgroundImage ![networkDuplex] ###
 This packet is used to change the private background image in a specific conversation. It is sent with `MessageFlags.Loopback` to the affected channel. To set a default background image, send this packet to the loopback channel. For file uploading and selecting, use the file id of the wrapping channel message.
 ```vpsl
+@message [MediaMessage] [ExternalFile]
 // No additional content
 ```
 
 ### **0x2B** OnlineState ![networkDown] ###
 This packet is injected by the server with `MessageFlags.Unencrypted` and `MessageFlags.NoSenderSync` in the user's account data channel. Later versions will have different channels to handle permissions.
 ```vpsl
+@message Unencrypted NoSenderSync
 <OnlineState:Byte OnlineState>((OnlineState.Inactive)<DateTime LastActive>)
 ```
 ```csharp
@@ -600,9 +624,11 @@ This packet contributes real time data to the general DeviceList packet.
 
 ---
 ### Unassigned Packet IDs
+- **0x0B** ChannelMessage
 - **0x10** RealTimeMessage
 - **0x11** SubscribeChannel
 - **0x12** UnsubscribeChannel
+- **0x1F** ProfileDataChannelUpdate
 - **0x30** FileUpload
 - **0x31** FileUploadResponse
 
