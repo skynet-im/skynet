@@ -107,8 +107,8 @@ During the session restore the server will send `SkipCount = -1` which means the
 ((ToClient)<Int64 SkipCount><DateTime DispatchTime>)
 <MessageFlags:Byte MessageFlags>
 ((MessageFlags.ExternalFile)<Int64 FileId>)
-[
-    <ByteArray ContentPacket>
+[AesHmac/None:ByteArray PacketContent
+    ...
     ((MessageFlags.MediaMessage)<File File>)
 ]
 {UInt16 Dependencies <Int64 AccountId><Int64 MessageId>}
@@ -246,7 +246,6 @@ After initializing a connection, the client can restore a session with this pack
 ```csharp
 enum RestoreSessionStatus {
     Success,
-    InvalidCredentials,
     InvalidSession
 }
 ```
@@ -432,7 +431,9 @@ To change the group channel key, the admin sends an update to each client in the
 @dependency GroupChannelKeyNotify // per account
 <Int64 GroupRevision>{UInt16 Members
 <Int64 AccountId><GroupMemberFlags:Byte Flags>}
-[UInt32 ChannelHistory <Byte[64] ChannelKey><Byte[64] HistoryKey>]
+[AesHmac:ByteArray ChannelHistory
+    <Byte[64] ChannelKey><Byte[64] HistoryKey>
+]
 ```
 ```csharp
 [Flags]
