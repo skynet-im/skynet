@@ -7,14 +7,16 @@ These points will have to change to achieve this:
 ### 1. Concurrency ###
 The UserData will get a revision control system that detects concurrent changes and forces clients to merge data sets before uploading new data.
 ### 2. Timing independency ###
-Checking for updates using a single DateTime is very data efficient, but it is not guaranteed that you will receive all pending messages. Changes are very difficult to track like this and server development gets increasingly difficult. The new revision based system will need to transfer more data but it will be simpler to implement, more versatile and guarantees data integrity. Message edits and deletions will be treated like new messages. The most difficult thing will be the `ViewableContentInfo`. Sending one packet per client and message would result in an inefficient system causing hundreds of separate packets.
+Checking for updates using a single DateTime is very data efficient, but it is not guaranteed that you will receive all pending messages. Changes are very difficult to track like this and server development gets increasingly difficult.
+The new revision-based system will need to transfer more data but it will be simpler to implement, more versatile and guarantees data integrity. Message edits and deletions will be treated like new messages. The most difficult thing will be the `ViewableContentInfo`. Sending one packet per client and message would result in an inefficient system causing hundreds of separate packets.
 ### 3. Transactions and retry ###
 Accepting a contact request is a complex process requiring many steps. The new protocol has to ensure that changes are only written to the database once all steps succeeded. If this is not the case, the client must be able to retry the action. Therefore changes, especially those done to the UserData must be linked to other packets.
 ### 4. Cryptography reloaded ###
 Although Skynet should be designed to be more secure than other messengers, Protocol v4 was not able to use end-to-end encryption for profile data related content such as profile images or the daystream. Furthermore, we have to check each situation for whether a server-sided validation is enough or we should use a signature algorithm.
-Skynet will not offer Perfect Forward Secrecy because we want to keep cloud synchronisation and data backup as our main features, which would not be possible with PFS.
+Skynet will not offer Perfect Forward Secrecy because we want to keep cloud synchronization and data backup as our main features, which would not be possible with PFS.
 ### 5. Sync on demand ###
-Downloading all messages on startup wastes a lot of expensive data volume, slows down the client and makes a web integration completely impossible. A new revision based system should allow sync on demand.
+Downloading all messages on startup wastes a lot of expensive data volume, slows down the client and makes a web integration completely impossible.
+A new revision-based system should allow sync on demand.
 ### 6. Permissions ###
 On the current server, anyone can request any file. Although, with the new system, most files will be encrypted and the file IDs are random which makes it more difficult to get a plaintext file, we need to implement permissions. Files will be pinned for single users or groups and unpinned once the associated messages or post was deleted. A cleanup service can then safely delete these files. The server must ensure that only clients with access to a file can share it.
 ### 7. Structuring ###
@@ -30,13 +32,14 @@ These problems have to be fixed with Protocol v5
 Each connection begins with a handshake. This allows us to inform the user about new application versions, or even enforce an update. Application versions in VSL must only be incremented once the layout of the handshake packet changes. In Skynet however, we will treat each platform differently so that new versions can be released asynchronously for different platforms.
 
 ### Device Registration ###
-Using Firebase Cloud Messaging (FCM) requires the server to keep track of the registered devices. Furthermore, tracking devices brings two more important advantages: Devices that were not connected for more than half a year can be forced to reauthenticated. Also, other features like a two factor authentication are then possible.
+Using Firebase Cloud Messaging (FCM) requires the server to keep track of the registered devices.
+Furthermore, tracking devices brings two more important advantages: Devices that were not connected for more than half a year can be forced to reauthenticate. This also allows for other features such as two-factor authentication.
 
 ### Channels ###
 With the Skynet protocol v4 we had different implementations for many types of communication channels. This concept made abstraction almost impossible and increased the complexity, especially on the server side.
 
-To avoid this problem we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`. The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with a globally unique incremental ID. The key exchange for a channel is either done by a contact request or by using the key of an existing private channel.  
-In order to move away from the old `UserData` packet, which was prone to concurrency and timing errors, we introduce an additional channel and two more types of messages.
+To avoid this problem, we introduce a completely new concept with Platinum Stack: Every communication channel will now be treated as a `Channel` with a unique `ChannelId`.
+The server does not care which messages are sent over a channel. Data is sent over a `Channel` as a `Message` with a globally unique incremental ID. Each channel type provides its own mechanism for key exchange.  
 
 ##### SkipCount #####
 As messages are delivered asynchronously, it might happen that they arrive in a different order than their message IDs. Imagine the following situation in a group with Alice, Bob and Charlie:
@@ -48,16 +51,19 @@ As messages are delivered asynchronously, it might happen that they arrive in a 
 5. Charlie's message is delivered to Alice with `SkipCount = 0`
 6. Bob's message is delivered to Alice with `SkipCount = 1`
 
-If Alice would loose her connection after step 5, she would never receive Bob's message because her `LastMessageId` is `6`. Therefore the server sends a `SkipCount` indicating how many message IDs have been skipped regarding all her channels. With this information Alice can notice that she is missing a message. If she doesn't receive this message at the next session restore, her client has to request it from the server.
+If Alice would lose her connection after step 5, she would never receive Bob's message because her `LastMessageId` is `6`.
+Therefore, the server sends a `SkipCount` indicating how many message IDs have been skipped regarding all her channels. With this information Alice can notice that she is missing a message.
+If she doesn't receive this message at the next session restore, her client has to request it from the server.
 
 ##### MessageFlags #####
 `MessageFlags.Loopback` indicates that a message is to be delivered only to the other devices of the sender of this message. Messages with the loopback flag are encrypted using the key of the users _loopback channel_.  
-Using a loopback flag solves many problems but makes the classical revision system of all clients having the same data impossible. Therefore, a client which decides, not to sychronize all messages, has to request them later from the server which may lead to duplicate messages that have to be ignored.
+Using a loopback flag solves many problems but makes the classical revision system of all clients having the same data impossible.
+Therefore, a client which decides not to synchronize all messages has to request them later from the server which may lead to duplicate messages that have to be ignored.
 
 `MessageFlags.Unencrypted` marks a message that is not encrypted and should be processed by the server. Data such as blocked contacts and conversations is managed using the loopback channel with this flag.  
 
 ##### Loopback Channel #####
-This is a special channel whose only member is the creating user. It acts as kind of a clipboard which is sued to synchronize data across devices. Its key is directly derived from the user's password.
+This is a special channel whose only member is the creating user. It acts as kind of a clipboard which is sued to synchronize data across devices and replaces the old `UserData` packet, which was prone to concurrency and timing errors. Its key is directly derived from the user's password.
 
 ##### Account Data Channel #####
 This channel contains all public account information like the public keys to avoid individual forwarding to direct channels. All messages have to be sent with `MessageFlags.Unencrypted`. The server automatically adds all contacts to the user's account data channel.
@@ -69,15 +75,18 @@ The direct channel is used for direct chat between two accounts. There is no lon
 Many other scenarios are realized with a _group channel_. This kind of channel is not limited to classical groups, but is also used for sharing profile related data. The key of a group channel is exchanged via the direct channel between the group admin and each member.
 
 ##### Dependencies #####
-In order to manage key changes and being able to delete messages when they're not needed anymore, messages can have dependencies to multiple messages on the same or a different channel. Encrypted messages with `MessageFlags.Loopback` must reference one `0x15 PasswordUpdate`, messages in direct channels must reference one `0x1B DirectChannelUpdate` and messages in group channels must reference one `0x1E GroupChannelUpdate`. A special case is the key change of a group channel, which has one dependency per account. Additionally, this message needs _MessageFlags.NoSenderSync_ to indicate that it's not synchronised across the sender's devices.
+In order to manage key changes and being able to delete messages when they're not needed anymore, messages can have dependencies to multiple messages on the same or a different channel. Encrypted messages with `MessageFlags.Loopback` must reference one `0x15 PasswordUpdate`, messages in direct channels must reference one `0x1B DirectChannelUpdate` and messages in group channels must reference one `0x1E GroupChannelUpdate`. A special case is the key change of a group channel, which has one dependency per account. Additionally, this message needs _MessageFlags.NoSenderSync_ to indicate that it's not synchronized across the sender's devices.
 
 ##### Profile data #####
 Profile data can either be shared publicly via the account's account data channel with _MessageFlags.Unencrypted_ or via a profile data channel, which technically inherit from the group channel. To manage permissions, multiple profile data channels containing different members can be created. The account data channel is unique per account and managed by the server.
 
 ### User files ###
 The files attached to media messages are encrypted using `AES-GCM-256` and then uploaded to file transfer servers over HTTPS (see [features.md](features.md)).  
-Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel channel are allowed to reference it in other channels. This saves a lot of bandwidth when files are forwarded.  
-When a message is referenced for the first time in a channel and the sender is allowed to use it, this channel is granted permission to share it again. Files without any permissions are deleted by the garbage collector after a certain time. When a message is deleted in a channel that does not hold any other references to this file, the channel looses its permission. When the file has no more permissions, it's instantly deleted by the garbage collector.  
+Authenticated clients can always upload files, and get an Int64 `FileId` from the server. The owner of a file is allowed to reference it in a message. After that, all users in the same channel are allowed to reference it in other channels.
+This saves a lot of bandwidth when files are forwarded. Clients are encouraged to search for an identical file before uploading as users might want to share the same file at different times to different users.
+
+When a file is referenced for the first time in a channel, all of its members are granted permission to share the file. Files without any permissions are deleted by the garbage collector after a certain time.
+When the last message referencing a file is deleted in a channel, the channel members lose their permission to share this file. Once a file that was previously referenced is not accessible to any users anymore, it is instantly deleted by the garbage collector.  
 If a client attempts to reference a file that does not exist or that it has no permission for, the client will know this from the status code in the `ChannelMessageResponse` packet.
 
 ### Cryptography ###
@@ -86,7 +95,7 @@ The security of Skynet is based on the user's password:
 2. `AccountKey` (first 32 bytes for HMAC, last 32 bytes for AES)
 3. `KeyHash` (32 bytes for authentication)
 
-The `AesKey` is derived from the users password with _Argon2id_ using the `SHA256(AccountName)` as salt:
+The `AesKey` is derived from the user's password with _Argon2id_ using the `SHA256(AccountName)` as salt:
 ```
 KeyMaterial = Argon2(P: Password, S: SHA256(AccountName), p: 8, T: 96, m: 8192, t: 2, v: 13, y: 2);
 AccountKey = KeyMaterial.Slice(s: 0, l: 64);
@@ -283,7 +292,7 @@ enum ChannelCreateStatus {
 ```
 
 ### **0x0D** DeleteChannel ![networkDown] ###
-Sent by the server to notify a client that a channel has been deleted permanently from the server. The client should not include the state of this channel in _RestoreSession_ packets anymore, but can keep the data locally.
+Sent by the server to notify a client that a channel has been deleted permanently from the server. The client should not include this channel in _RestoreSession_ packets anymore, but can keep the data locally.
 ```vpsl
 <Int64 ChannelId>
 ```
@@ -311,20 +320,28 @@ This packet is sent by the client to request channel messages that have not been
 Use `ChannelId=0` to get messages from arbitrary channels.  
 Setting `After` or `Before` to `0` disables the boundry check.
 
-After sending all requested messages, the servers sends a _SyncFinshed_ packet. Because of dependencies it will happen almost every time that the client will receive messages from the server that it already has. These messages have to be ignored.
+Just like the session restore, this action starts a sync process with _SyncStarted_ and _SyncFinshed_ packets.
+It is likely that the client will receive messages from the server that it already has. These messages have to be ignored.
 ```vpsl
 <Int64 ChannelId>
 <Int64 After><Int64 Before>
 <UInt16 MaxCount>
 ```
 
-### **0x0F** SyncFinished ![networkDown] ###
-This packet is sent by the server to a client to indicate that all messages have been delivered. If the client has a _WakeLock_ or something like this to prevent the users device from sleeping, it can be released after receiving this message.
+### **0x0B** SyncStarted ![networkDown] ###
+This packet is sent by the server to a client to indicate that a sync process has started.
+`MinCount` specifies how many channel messages are going to be sent at least. A value of `-1` means that the server did not check the message count in advance. Clients must not consider a sync process to be complete before they receive the respective _SyncFinished_ packet.
+```vpsl
+<Int32 MinCount>
+```
 
+### **0x0F** SyncFinished ![networkDown] ###
+This packet is sent by the server to a client to indicate that all messages have been delivered.
+If the client has a _WakeLock_ or something like this to prevent the user's device from sleeping, it can be released after receiving this message.
 ```vpsl
 // No additional content
 ```
-When a client receives this packet it should ensure that the following tasks have been completed or execute them in this order:
+If a client receives this packet after session creation or restore, it should ensure that the following tasks have been completed or execute them in this order:
 1. PrivateKeys
 2. PublicKeys
 3. Nickname
@@ -447,8 +464,9 @@ enum GroupMemberFlags {
 ```
 
 ### **0x19** ArchiveChannel ![networkDuplex] ###
-This changes a channel's archive mode which is necessary to avoid sending messages to a deleted or blocked channel.
-In contrast to deleted channels, clients can still send packets like `GroupChannelKeyNotify` over blocked channels.
+This packet changes a channel's archive mode which is necessary to avoid sending messages to a deleted or blocked channel.
+Only direct channels can be blocked which is done by the server. In contrast to deleted channels, clients can still send messages with `MessageFlags.Loopback` like _DirectChannelCustomization_ as well as _GroupChannelKeyNotify_ packets over blocked channels.
+Direct channels can only be deleted by deleting one of the accounts involved, whereas group channels can be deleted by their administrators by sending this packet with `ArchiveMode.Deleted`.
 ```vpsl
 @message Unencrypted
 <ArchiveMode:Byte ArchiveMode>
@@ -542,7 +560,8 @@ Similar to Bio packet. This packet uses the `FileId` of its container.
 ```
 
 ### **0x28** BlockList ![networkDuplex] ###
-The blocked content packet is sent by a client to it's loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`. The server will then filter contact requests or group invites.
+The blocked content packet is sent by a client to its loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`.
+The server will then filter contact requests or group invites.
 ```vpsl
 @message Loopback Unencrypted
 {UInt16 BlockedAccounts <Int64 AccountId>}
@@ -550,7 +569,8 @@ The blocked content packet is sent by a client to it's loopback channel with `Me
 ```
 
 ### **0x29** DeviceList ![networkDown] ###
-The device list packet is sent by the server to the clients loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`. With this data the client can inform the user after a new login.
+The device list packet is sent by the server to the client's loopback channel with `MessageFlags.Unencrypted` and `PersistenceMode.KeepLast`.
+With this data the client can inform the user after a new login.
 ```vpsl
 @message Loopback Unencrypted
 {UInt16 Sessions <Int64 SessionId><DateTime CreationTime><ShortString ApplicationIdentifier>}
@@ -559,7 +579,7 @@ The device list packet is sent by the server to the clients loopback channel wit
 ### **0x2A** BackgroundImage ![networkDuplex] ###
 This packet is used to change the private background image in a specific conversation. It is sent with `MessageFlags.Loopback` to the affected channel. To set a default background image, send this packet to the loopback channel. For file uploading and selecting, use the file id of the wrapping channel message.
 ```vpsl
-@message [MediaMessage] [ExternalFile]
+@message Loopback [MediaMessage] [ExternalFile]
 // No additional content
 ```
 
@@ -619,14 +639,13 @@ Sent by the client to request device list details.
 ```
 
 ### **0x33** DeviceListResponse ![networkDown] ###
-This packet contributes real time data to the general DeviceList packet.
+This packet contributes real time data to the general _DeviceList_ packet.
 ```vpsl
 {UInt16 SessionDetails <Int64 SessionId><DateTime LastConnected><Int32 LastVersionCode>}
 ```
 
 ---
 ### Unassigned Packet IDs
-- **0x0B** ChannelMessage
 - **0x10** RealTimeMessage
 - **0x11** SubscribeChannel
 - **0x12** UnsubscribeChannel

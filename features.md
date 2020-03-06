@@ -8,10 +8,8 @@
 - Contacts
   - Account search
     - Show public profile data
-  - Contact request
-  - Private data
-    - Local nickname
-    - Image shape
+  - Local nickname
+  - Image shape
   - Block and delete
   - Verification
     - QR code with temporal component
@@ -54,9 +52,8 @@
   - Optionally public profile data
   - Configurable font within Skynet (not synchronized)
 - GDPR compliance
-  - Download all account related data from server (messages, files etc.)
-    - Select whether to include the encrypted message content blobs
-    - Select whether to download all files 
+  - Download all unencrypted account related data from server (messages, files etc.)
+  - Export chats and files from the apps
   - Privacy policy on all related websites, and in application
   - Confirmation mail to parents if user is under 16 years old
   
@@ -81,9 +78,9 @@
 
 ## Release v2.0+
 - Contact request
-  - Suggest accounts for contact request based on the users contacts
-  - Passive contact request via QR code
-  - Require verification key for sending contact request
+  - Suggest new contacts based on the user's address book
+  - Start chat and authenticate via QR code
+  - Optionally require verification for creating a direct chat
   - Automatic key exchange using pre-keys and manual accept for personal data
 - Messages
   - Cross-Conversation-Quotes
@@ -102,9 +99,6 @@
   - Join groups via invitation link
   - Allow new members to get previous messages
   - Form subgroups for special events or topics
-- VSL 2.0
-  - Perfect Forward Secrecy
-  - Session Restore
 - Account
   - Two factor authentication
   - Delete sessions in session/device list
