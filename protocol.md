@@ -619,17 +619,15 @@ This packet informs the server about the current client state.
 ---
 ### On demand packets ###
 ### **0x2D** SearchAccount ![networkUp] ###
+Clients can use this packet to search for accounts in order to start a new conversation. The query may include the mail address or the public nickname of the sought account.
 ```vpsl
 <ShortString Query>
 ```
 
 ### **0x2E** SearchAccountResponse ![networkDown] ###
-This packet contains all results of a _SearchAccount_ query and forwards public profile data.
+This packet contains all results of a _SearchAccount_ query. The server starts a sync to forward public profile data of every account asynchronously. These channel messages are forwarded with `ChannelId = 0` and their original `OwnerId`.
 ```vpsl
-{UInt16 Results
-    <Int64 AccountId><ShortString AccountName>
-    {UInt16 ForwardedPackets <Byte PacketId><ByteArray PacketContent>}
-}
+{UInt16 Results <Int64 AccountId><ShortString AccountName>}
 ```
 
 ### **0x32** DeviceListRequest ![networkUp] ###
